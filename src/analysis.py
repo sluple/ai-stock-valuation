@@ -13,6 +13,10 @@ from normalize import build_financial_table
 
 TARGET_YEAR = 2024
 
+# 실제 공시값·회귀모델·업종평균 세 추정치가 서로 이 비율 이내로 근접하면
+# "업종 내 전형적인 배출 패턴"으로 판정한다. (max-min)/min 기준.
+TYPICAL_PATTERN_THRESHOLD = 0.3
+
 
 @dataclass
 class EmissionsResult:
@@ -28,6 +32,8 @@ class EmissionsResult:
     model_metrics: dict
     scale_ratio: float
     scale_warning: bool
+    estimate_divergence_ratio: float
+    is_typical_pattern: bool
     warnings: list[str] = field(default_factory=list)
 
 
@@ -100,6 +106,15 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
             "여러 사업을 겸영하는 대기업/복합기업일 가능성이 높아, 추정 신뢰도가 낮을 수 있습니다."
         )
 
+    # 실측값(있는 경우)·회귀모델·업종평균 추정치가 서로 얼마나 근접한지로
+    # "업종 내 전형적인 배출 패턴"인지 판정한다.
+    compare_values = [preds["model_estimate"], preds["benchmark_estimate"]]
+    if actual_scope12 is not None:
+        compare_values.append(actual_scope12)
+    lo, hi = min(compare_values), max(compare_values)
+    divergence_ratio = (hi - lo) / lo if lo > 0 else float("inf")
+    is_typical_pattern = divergence_ratio <= TYPICAL_PATTERN_THRESHOLD
+
     return EmissionsResult(
         corp=corp,
         financials=fin,
@@ -113,6 +128,8 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
         model_metrics=artifact["metrics"],
         scale_ratio=preds["scale_ratio"],
         scale_warning=preds["scale_warning"],
+        estimate_divergence_ratio=divergence_ratio,
+        is_typical_pattern=is_typical_pattern,
         warnings=warnings,
     )
 
@@ -148,6 +165,8 @@ def build_llm_context(result: EmissionsResult) -> dict:
         "Scope3_추정치": safe_round(result.scope3_estimate, 0),
         "업종대비_매출규모_배율": safe_round(result.scale_ratio, 1),
         "규모_이상치_경고": result.scale_warning,
+        "추정방법간_편차율": safe_round(result.estimate_divergence_ratio, 2),
+        "업종내_전형적_배출패턴_여부": result.is_typical_pattern,
         "모델_성능": {
             "R2": safe_round(result.model_metrics.get("r2"), 3),
             "학습표본수": result.model_metrics.get("n_train"),

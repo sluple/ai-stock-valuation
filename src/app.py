@@ -243,6 +243,17 @@ with tab1:
         fig1.update_layout(yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=360, showlegend=False)
         st.plotly_chart(fig1, width="stretch")
 
+        if result.is_typical_pattern:
+            st.success(
+                f"방법론 간 추정치가 서로 {result.estimate_divergence_ratio * 100:.0f}% 이내로 근접해요. "
+                "이 회사는 업종 내에서 전형적인 배출 패턴을 보인다는 뜻이라, 추정치를 신뢰할 수 있는 편이에요."
+            )
+        else:
+            st.info(
+                f"방법론 간 추정치 차이가 {result.estimate_divergence_ratio * 100:.0f}%로 커요. "
+                "이 회사가 업종 평균과 다른 배출 특성(설비 효율, 사업 구성 등)을 가지고 있을 수 있으니 참고만 해주세요."
+            )
+
     st.write("")
     with st.container(border=True):
         st.markdown("#### Scope 1+2 vs Scope 3 비교")
