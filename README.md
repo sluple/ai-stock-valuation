@@ -8,6 +8,8 @@ DART(전자공시시스템) 재무제표를 자동으로 읽어와 DCF·상대�
 - DCF 밸류에이션 (2가지 방식으로 교차검증)
 - 동일 업종 피어와 PER/PBR/EV-EBIT 상대가치평가
 - Claude API 기반 AI 리포트 생성 (숫자는 코드가 계산, LLM은 해설만 담당)
+- Supabase Auth 기반 로그인/회원가입
+- 로그인 시 관심 종목 워치리스트 등록, 재분석, 괴리율 알림, 괴리 추이 차트
 - Supabase에 분석 기록 저장 및 조회
 
 ## 로컬 실행
@@ -50,9 +52,32 @@ create table if not exists analyses (
   ev_ebit_implied_value numeric,
   peer_codes text,
   report_text text,
-  raw_context jsonb
+  raw_context jsonb,
+  user_id uuid references auth.users(id) on delete set null
 );
+
+alter table analyses enable row level security;
+create policy "public insert" on analyses for insert to anon with check (true);
+create policy "public update" on analyses for update to anon using (true) with check (true);
+create policy "users select own or anon analyses" on analyses
+  for select using (user_id is null or auth.uid() = user_id);
+
+create table if not exists watchlist (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  stock_code text not null,
+  corp_name text,
+  alert_threshold numeric not null default -0.15,
+  created_at timestamptz not null default now(),
+  unique(user_id, stock_code)
+);
+
+alter table watchlist enable row level security;
+create policy "users manage own watchlist" on watchlist
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
+
+워치리스트/로그인 기능을 쓰려면 Supabase 프로젝트의 Authentication 설정에서 이메일 인증(Confirm email)을 꺼두면 가입 즉시 로그인할 수 있어 데모하기 편합니다 (Authentication → Providers → Email → Confirm email 끄기).
 
 ## Railway 배포
 
@@ -71,7 +96,8 @@ src/
   relative_valuation.py  PER/PBR/EV-EBIT 상대가치평가
   market_data.py      실시간 주가 조회
   llm_report.py       Claude API 기반 리포트 생성
-  db.py               Supabase 저장/조회
+  db.py               Supabase 저장/조회/워치리스트 (세션별 클라이언트 주입)
+  auth.py             Supabase Auth 로그인/회원가입
   analysis.py         전체 파이프라인 통합 (CLI/대시보드 공용)
   main.py             CLI 실행 진입점
   app.py              Streamlit 대시보드
