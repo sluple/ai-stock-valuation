@@ -35,10 +35,13 @@ def main() -> None:
     for i, row in grouped.iterrows():
         corp_code = row["corp_code"]
         try:
-            data = get_financial_statements(corp_code, 2024, fs_div="CFS")
+            # 별도(OFS)재무제표를 우선 사용한다: 배출권거래제 배출량은 특정 법인(사업장) 단위인데,
+            # 연결(CFS) 매출액을 쓰면 지주회사·복합기업의 경우 무관한 계열사 매출까지 섞여
+            # 매출 대비 배출집약도가 크게 왜곡된다 (세아베스틸지주는 연결매출이 별도매출의 22배,
+            # 동국홀딩스는 50배 — 실제로 확인된 값). 별도재무제표가 없는 경우에만 연결로 대체한다.
+            data = get_financial_statements(corp_code, 2024, fs_div="OFS")
             if data.get("status") != "000":
-                # 자회사가 없어 연결재무제표를 안 내는 기업이 많다 -> 별도재무제표로 재시도
-                data = get_financial_statements(corp_code, 2024, fs_div="OFS")
+                data = get_financial_statements(corp_code, 2024, fs_div="CFS")
             if data.get("status") != "000":
                 failed.append((row["corp_name"], data.get("status"), data.get("message")))
                 continue

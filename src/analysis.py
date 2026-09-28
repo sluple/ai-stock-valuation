@@ -59,10 +59,11 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
     """이미 찾아놓은 기업 정보(corp_code 포함)로 바로 분석한다 (이름 검색 UI 등에서 사용)."""
     warnings: list[str] = []
 
-    data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="CFS")
+    # 학습 데이터와 반드시 같은 기준(별도재무제표 우선)을 써야 한다 — 안 그러면 학습은 OFS
+    # 매출로, 예측은 CFS 매출로 하는 불일치가 생겨 지주회사·복합기업에서 큰 오차가 난다.
+    data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="OFS")
     if data.get("status") != "000":
-        # 자회사가 없어 연결재무제표를 안 내는 기업이 많다 -> 별도재무제표로 재시도
-        data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="OFS")
+        data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="CFS")
     if data.get("status") != "000":
         raise ValueError(f"{TARGET_YEAR}년 재무제표 조회 실패: {data.get('message')}")
     fin = build_financial_table(data.get("list", []))
