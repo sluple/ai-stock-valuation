@@ -14,8 +14,8 @@ from llm_report import generate_report
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="leaf", layout="wide")
 
 # ── 색상 팔레트: masstige.io 레퍼런스(흰 배경 + 검정 텍스트 + 라임 포인트) 참고 ──
-BG = "#FFFFFF"
-BG2 = "#F4F4F2"
+# 기본 배경/글자색은 .streamlit/config.toml의 테마로 통일한다 — CSS로 개별 위젯을
+# 덮어쓰면 다크모드 브라우저에서 위젯 내부 기본 글자색과 충돌해 안 보이는 사고가 난다.
 INK = "#0B0B0B"
 INK2 = "#43433F"
 MUT = "#8A8A85"
@@ -25,7 +25,7 @@ ACCENT = "#DDFF4F"
 ACCENT2 = "#B9E000"
 
 COLOR_ACTUAL = INK          # 실제 공시값 (가장 신뢰도 높음 — 검정)
-COLOR_MODEL = "#A8C6FF"     # 회귀모델 추정치 (연한 파랑)
+COLOR_MODEL = "#7FA8E0"     # 회귀모델 추정치 (파랑)
 COLOR_BENCHMARK = ACCENT2   # 업종평균 추정치 (올리브라임)
 COLOR_SCOPE3 = MUT          # Scope 3 (중립 회색)
 
@@ -43,7 +43,8 @@ def fmt_ton(x: float | None) -> str:
     return f"{x:,.0f} tCO2eq" if x is not None else "정보 없음"
 
 
-# ── 전역 스타일 ──────────────────────────────────────────────────────────
+# ── 전역 스타일: 테마(config.toml)가 기본 색을 맡고, 여기서는 커스텀 HTML 블록과
+#    포인트 요소(버튼·히어로·카드 모서리)만 다듬는다 ──────────────────────────
 st.markdown(
     f"""
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -53,29 +54,19 @@ st.markdown(
         html, body, [class*="css"] {{
             font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
         }}
-        .stApp {{ background: {BG}; }}
-        .block-container {{ padding-top: 1.5rem; max-width: 1200px; }}
+        .block-container {{ padding-top: 2rem; max-width: 1040px; }}
 
-        h1, h2, h3, h4 {{ font-weight: 800 !important; letter-spacing: -0.03em; color: {INK}; }}
+        h1, h2, h3, h4 {{ font-weight: 800 !important; letter-spacing: -0.03em; }}
 
-        [data-testid="stMetric"] {{
-            background: {BG};
-            border: 1px solid {LINE};
-            border-radius: 16px;
-            padding: 1rem 1.1rem;
-        }}
+        [data-testid="stMetric"] {{ border: 1px solid {LINE}; border-radius: 16px; padding: 1rem 1.1rem; }}
         [data-testid="stMetricLabel"] {{
-            color: {MUT}; font-weight: 700; font-size: 0.78rem;
-            letter-spacing: 0.02em; text-transform: uppercase;
+            font-weight: 700; font-size: 0.78rem; letter-spacing: 0.02em; text-transform: uppercase;
         }}
-        [data-testid="stMetricValue"] {{ color: {INK}; font-weight: 800; letter-spacing: -0.03em; }}
+        [data-testid="stMetricValue"] {{ font-weight: 800; letter-spacing: -0.03em; }}
 
         div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 14px; }}
-        div[data-testid="stExpander"] details summary {{ font-weight: 700; color: {INK}; }}
-
-        div[data-testid="stContainer"] {{ border-radius: 16px !important; }}
-
-        [data-testid="stSidebar"] {{ background: {BG2}; border-right: 1px solid {LINE}; }}
+        div[data-testid="stExpander"] details summary {{ font-weight: 700; }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 16px !important; }}
 
         .stButton > button[kind="primary"] {{
             background: {ACCENT} !important;
@@ -85,34 +76,29 @@ st.markdown(
             border-radius: 100px !important;
             letter-spacing: -0.01em;
         }}
-        .stButton > button[kind="primary"]:hover {{ background: {ACCENT2} !important; }}
-        .stButton > button[kind="primary"]:disabled {{
-            background: {LINE} !important; color: {MUT} !important;
-        }}
+        .stButton > button[kind="primary"]:hover {{ background: {ACCENT2} !important; color: {INK} !important; }}
+        .stButton > button[kind="primary"]:disabled {{ background: {LINE} !important; color: {MUT} !important; }}
 
-        .stTabs [data-baseweb="tab"] {{ font-weight: 700; color: {MUT}; }}
-        .stTabs [aria-selected="true"] {{ color: {INK} !important; }}
+        .stTabs [data-baseweb="tab"] {{ font-weight: 700; }}
 
-        .hero {{
-            background: {DARK};
-            padding: 2.2rem 2rem;
-            border-radius: 20px;
-            margin-bottom: 1.5rem;
-        }}
+        .hero {{ background: {DARK}; padding: 2.4rem 2.2rem; border-radius: 22px; margin-bottom: 1.75rem; }}
         .hero__eyebrow {{
             display: inline-flex; align-items: center; gap: 8px;
-            color: {MUT}; font-size: 0.78rem; font-weight: 700;
-            letter-spacing: 0.03em; margin-bottom: 0.6rem;
+            color: #9A9A93; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; margin-bottom: 0.7rem;
         }}
-        .hero__eyebrow i {{
-            width: 6px; height: 6px; border-radius: 50%; background: {ACCENT}; display: inline-block;
-        }}
+        .hero__eyebrow i {{ width: 6px; height: 6px; border-radius: 50%; background: {ACCENT}; display: inline-block; }}
         .hero h1 {{
-            color: #fff !important; margin: 0; font-size: clamp(1.6rem, 3.4vw, 2.4rem);
-            letter-spacing: -0.04em; line-height: 1.15;
+            color: #fff !important; margin: 0; font-size: clamp(1.7rem, 3.6vw, 2.5rem);
+            letter-spacing: -0.045em; line-height: 1.18;
         }}
         .hero h1 mark {{ background: none; color: {ACCENT}; }}
-        .hero p {{ color: #B7B7B0; margin: 0.6rem 0 0 0; font-size: 0.95rem; line-height: 1.6; max-width: 62ch; }}
+        .hero p {{ color: #B7B7B0; margin: 0.75rem 0 0 0; font-size: 0.97rem; line-height: 1.65; max-width: 60ch; }}
+
+        .section-tag {{
+            display: inline-flex; align-items: center; gap: 7px; font-size: 0.76rem; font-weight: 700;
+            letter-spacing: 0.03em; color: {MUT}; text-transform: uppercase; margin-bottom: 0.3rem;
+        }}
+        .section-tag i {{ width: 5px; height: 5px; border-radius: 50%; background: {ACCENT2}; display: inline-block; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -130,10 +116,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-with st.expander("어려운 용어가 있으면 여기를 눌러 확인하세요"):
-    for term, desc in GLOSSARY:
-        st.markdown(f"**{term}** — {desc}")
-
 if "sb_client" not in st.session_state:
     st.session_state.sb_client = db.create_client()
 sb = st.session_state.sb_client
@@ -144,30 +126,37 @@ except FileNotFoundError:
     industries = []
     st.error("학습된 모델이 없습니다. `python build_emissions_dataset.py` 후 `python train_model.py`를 먼저 실행하세요.")
 
-# ── 사이드바: 회사 이름 검색 ──────────────────────────────────────────────
-with st.sidebar:
-    st.header("분석하고 싶은 회사")
-    company_query = st.text_input(
-        "회사 이름", value="삼성전자", placeholder="예: 삼성전자, SK하이닉스, 포스코"
-    )
+# ── 검색 카드: 사이드바 대신 히어로 바로 아래 중앙에 배치 ───────────────────────
+with st.container(border=True):
+    st.markdown('<div class="section-tag"><i></i>회사 검색</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        company_query = st.text_input(
+            "회사 이름", value="삼성전자", placeholder="예: 삼성전자, SK하이닉스, 포스코",
+            label_visibility="collapsed",
+        )
     candidates = fetch_dart.search_corp_by_name(company_query) if company_query else []
 
     selected_corp = None
     if candidates:
         option_labels = [f"{c['corp_name']}  ·  {c['stock_code'] or '비상장'}" for c in candidates]
-        picked = st.selectbox("찾은 회사 중에서 선택하세요", range(len(candidates)), format_func=lambda i: option_labels[i])
+        picked = st.selectbox(
+            "찾은 회사 중에서 선택하세요", range(len(candidates)), format_func=lambda i: option_labels[i],
+            label_visibility="collapsed",
+        )
         selected_corp = candidates[picked]
     elif company_query:
         st.caption("검색 결과가 없어요. 정식 회사명을 입력해보세요.")
 
-    st.divider()
-    industry_choice = st.selectbox(
-        "업종 (배출권거래제 공시 대상 기업은 자동 감지돼요)",
-        ["(자동 감지)"] + industries,
-    )
-    run_button = st.button(
-        "분석 시작", type="primary", width="stretch", disabled=selected_corp is None
-    )
+    with c2:
+        run_button = st.button("분석 시작", type="primary", width="stretch", disabled=selected_corp is None)
+
+    with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지돼요)"):
+        industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
+
+with st.expander("어려운 용어가 있으면 여기를 눌러 확인하세요"):
+    for term, desc in GLOSSARY:
+        st.markdown(f"**{term}** — {desc}")
 
 if "result" not in st.session_state:
     st.session_state.result = None
@@ -192,7 +181,7 @@ if run_button and selected_corp:
         except ValueError as e:
             st.session_state.result = None
             if "업종을 직접 선택" in str(e):
-                st.session_state.error = "이 기업은 배출권거래제 공시 대상이 아니에요. 왼쪽에서 업종을 직접 선택하고 다시 눌러주세요."
+                st.session_state.error = "이 기업은 배출권거래제 공시 대상이 아니에요. 위에서 업종을 직접 선택하고 다시 눌러주세요."
             else:
                 st.session_state.error = str(e)
         except Exception as e:  # noqa: BLE001
@@ -205,10 +194,11 @@ if st.session_state.error:
 result = st.session_state.result
 
 if result is None:
-    st.info("왼쪽에서 회사 이름을 검색하고 '분석 시작'을 눌러주세요.")
+    st.info("회사 이름을 검색하고 '분석 시작'을 눌러주세요.")
     st.stop()
 
 corp = result.corp
+st.write("")
 st.subheader(f"{corp['corp_name']}  ·  {corp['stock_code'] or '비상장'}")
 st.caption(f"업종: {result.industry}   |   {result.industry_source}")
 
