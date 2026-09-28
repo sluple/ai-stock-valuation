@@ -66,13 +66,15 @@ if run_button:
             st.session_state.report_text = None
             st.session_state.report_key = None
             st.session_state.record_id = None
+            st.session_state.db_error = None
             try:
                 context = build_llm_context(st.session_state.result, int(st.session_state.result.df.index[-1]))
                 st.session_state.record_id = db.save_analysis(
                     st.session_state.result, peer_codes, None, context
                 )
-            except Exception:  # noqa: BLE001
-                pass  # 기록 저장은 부가 기능이므로 실패해도 분석 자체는 계속 보여준다
+            except Exception as db_err:  # noqa: BLE001
+                # 기록 저장은 부가 기능이므로 실패해도 분석 자체는 계속 보여준다 — 대신 원인은 남겨둔다
+                st.session_state.db_error = str(db_err)
         except Exception as e:  # noqa: BLE001
             st.session_state.result = None
             st.session_state.error = str(e)
@@ -246,8 +248,8 @@ with tab4:
                     st.session_state.report_key = cache_key
                     try:
                         db.update_report(st.session_state.get("record_id"), st.session_state.report_text)
-                    except Exception:  # noqa: BLE001
-                        pass  # 기록 저장 실패는 화면에 보여줄 필요 없는 부가 기능
+                    except Exception as db_err:  # noqa: BLE001
+                        st.session_state.db_error = str(db_err)
                 except Exception as e:  # noqa: BLE001
                     st.session_state.report_text = None
                     st.error(f"리포트 생성에 실패했어요: {e}")
@@ -256,6 +258,8 @@ with tab4:
 
 with tab5:
     st.markdown("#### 지금까지 분석했던 기록")
+    if st.session_state.get("db_error"):
+        st.caption(f"기록 저장 중 문제가 있었어요: {st.session_state.db_error}")
     if not db.is_enabled():
         st.info(
             "기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 "
