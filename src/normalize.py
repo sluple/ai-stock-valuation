@@ -7,11 +7,23 @@
 - CF에는 감가상각비가 별도 라인으로 없고 "조정"에 뭉쳐 있음
   → FCFF는 감가상각비를 재구성하지 않고, 영업활동현금흐름(CFO)을 그대로 사용해 근사한다.
 """
+import re
+
 import pandas as pd
+
+# 일부 기업(예: 고려아연)은 계정명 앞에 "Ⅰ.", "Ⅷ. ", "XI. " 같은 로마자/숫자 번호를 붙인다.
+# 별칭 매칭 전에 이런 번호 접두사를 제거해야 한다.
+_NUMBERING_PREFIX = re.compile(r"^[0-9ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫIVXLCDM]{1,6}[.\)]\s*")
+
+
+def _strip_numbering_prefix(name: str) -> str:
+    return _NUMBERING_PREFIX.sub("", name)
+
 
 # 표준계정명 -> DART에서 실제로 쓰일 수 있는 별칭 목록
 ALIASES: dict[str, list[str]] = {
-    "매출액": ["매출액", "수익(매출액)", "영업수익"],
+    "매출액": ["매출액", "수익(매출액)", "영업수익", "매출"],
+    "매출원가": ["매출원가"],
     "영업이익": ["영업이익", "영업이익(손실)"],
     "당기순이익": ["당기순이익", "당기순이익(손실)"],
     "법인세비용차감전순이익": ["법인세비용차감전순이익", "법인세비용차감전순이익(손실)"],
@@ -39,6 +51,7 @@ _ALIAS_TO_CANON = {alias: canon for canon, aliases in ALIASES.items() for alias 
 # 다만 CF/SCE 쪽의 동명 계정(재구성용 합계 등)은 배제해 값이 덮어써지는 걸 막는다.
 _CANON_SJ_DIV = {
     "매출액": {"IS", "CIS"},
+    "매출원가": {"IS", "CIS"},
     "영업이익": {"IS", "CIS"},
     "당기순이익": {"IS", "CIS"},
     "법인세비용차감전순이익": {"IS", "CIS"},
@@ -61,7 +74,8 @@ def build_financial_table(raw_items: list[dict]) -> pd.DataFrame:
     """DART fnlttSinglAcntAll 응답의 list를 받아 (account -> amount) 한 행으로 정리한다."""
     values: dict[str, float] = {}
     for item in raw_items:
-        canon = _ALIAS_TO_CANON.get(item.get("account_nm"))
+        account_nm = _strip_numbering_prefix((item.get("account_nm") or "").strip())
+        canon = _ALIAS_TO_CANON.get(account_nm)
         if canon is None:
             continue
         allowed_sj_divs = _CANON_SJ_DIV.get(canon)

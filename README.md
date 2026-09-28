@@ -1,28 +1,51 @@
-# AI 주식 가치 분석기
+# AI 탄소배출량(Scope 3) 추정기
 
-DART(전자공시시스템) 재무제표를 자동으로 읽어와 DCF·상대가치평가로 적정주가를 계산하고, Claude API가 그 결과를 비전공자도 이해할 수 있게 풀어서 설명해주는 웹 대시보드입니다.
+기업의 재무데이터(매출액·매출원가)만으로 온실가스 배출량을 추정하는 도구입니다. 특히
+**Scope 3(협력사·물류·제품 사용 등 공급망 전체 배출량)**는 전체 배출량의 70~90%를
+차지함에도 측정이 거의 불가능해 대부분 기업이 공시하지 않는데, 이 프로젝트는 실제
+배출권거래제(K-ETS) 공시 데이터로 학습한 머신러닝 모델로 이를 추정합니다.
 
-## 주요 기능
+## 문제의식
 
-- OpenDART API로 재무제표 자동 수집 및 계정과목 표준화
-- DCF 밸류에이션 (2가지 방식으로 교차검증)
-- 동일 업종 피어와 PER/PBR/EV-EBIT 상대가치평가
-- Claude API 기반 AI 리포트 생성 (숫자는 코드가 계산, LLM은 해설만 담당)
-- Supabase Auth 기반 로그인/회원가입
-- 로그인 시 관심 종목 워치리스트 등록, 재분석, 괴리율 알림, 괴리 추이 차트
-- Supabase에 분석 기록 저장 및 조회
+- ESG 공시(KSSB 1호·2호 등)가 의무화되고 있지만, Scope 3는 측정 방법 자체가 난제
+- 환경투입산출모델(EEIO, 미국 EPA 등이 실제로 쓰는 방식)을 참고해 "매출액 대비 배출집약도"를
+  업종별로 학습하면, 공시하지 않은 기업도 대략적인 추정치를 낼 수 있음
+
+## 데이터 출처
+
+- **재무데이터**: OpenDART API (전자공시시스템)
+- **배출량 학습 데이터**: 온실가스종합정보센터 배출권거래제(K-ETS) 인증 배출량 공개 데이터
+  (data.go.kr, 법인명·배출량(tCO2eq) 포함, 약 780개 사업장 중 재무데이터와 매칭된 약 600여개 기업으로 학습)
+
+## 방법론
+
+1. **기업명 매칭**: K-ETS 공시 데이터의 법인명(예: "에스케이하이닉스주식회사")을 정규화해
+   DART 기업명(예: "SK하이닉스")과 매칭 — 회사형태 표기 제거 + 그룹명 음차 변환
+2. **Scope 1+2 추정**: 두 가지 방법을 함께 계산해 교차검증
+   - 회귀모델(RandomForest): 매출액·매출원가·업종 → 배출량 예측
+   - 업종평균(EEIO 방식): 같은 업종 기업들의 "배출량/매출액" 중앙값 적용
+3. **Scope 3 확장**: CDP 조사의 "Scope3가 전체 배출량의 평균 75%" 기준을 적용해 Scope1+2의
+   약 3배로 추정 (전산업 평균이라는 단순화 가정을 명시)
+4. **AI 리포트**: Claude API가 위 결과를 비전공자도 이해할 수 있게 풀어서 설명 (숫자는
+   전부 코드가 계산, LLM은 해석만 담당해 할루시네이션 위험을 차단)
 
 ## 로컬 실행
 
 ```bash
 pip install -r requirements.txt
 cd src
+
+# 1) 학습 데이터 구축 (K-ETS 배출량 + DART 재무데이터 매칭, 약 10~20분 소요)
+python build_emissions_dataset.py
+
+# 2) 모델 학습
+python train_model.py
+
+# 3) 대시보드 실행
 streamlit run app.py
 ```
 
 ## 환경변수 (.env)
-
-`.env.example`을 복사해 `.env`를 만들고 아래 값을 채워주세요.
 
 | 변수 | 설명 | 발급처 |
 |---|---|---|
@@ -31,74 +54,63 @@ streamlit run app.py
 | `SUPABASE_URL` | 분석 기록 저장용 (선택) | Supabase 프로젝트 설정 > API |
 | `SUPABASE_KEY` | 분석 기록 저장용 (선택) | Supabase 프로젝트 설정 > API |
 
-Supabase 관련 변수가 없어도 대시보드의 나머지 기능은 정상 동작하고, "지난 분석 기록" 탭만 비활성화됩니다.
-
 ## Supabase 테이블 생성
 
-Supabase 프로젝트의 SQL Editor에서 아래를 실행하세요.
-
 ```sql
-create table if not exists analyses (
+create table if not exists emissions_estimates (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   corp_name text not null,
-  stock_code text not null,
-  current_price numeric,
-  wacc numeric,
-  dcf_value_a numeric,
-  dcf_value_b numeric,
-  per_implied_value numeric,
-  pbr_implied_value numeric,
-  ev_ebit_implied_value numeric,
-  peer_codes text,
+  stock_code text,
+  industry text,
+  industry_source text,
+  revenue numeric,
+  actual_scope12 numeric,
+  model_estimate_scope12 numeric,
+  benchmark_estimate_scope12 numeric,
+  scope3_estimate numeric,
   report_text text,
-  raw_context jsonb,
-  user_id uuid references auth.users(id) on delete set null
+  raw_context jsonb
 );
 
-alter table analyses enable row level security;
-create policy "public insert" on analyses for insert to anon with check (true);
-create policy "public update" on analyses for update to anon using (true) with check (true);
-create policy "users select own or anon analyses" on analyses
-  for select using (user_id is null or auth.uid() = user_id);
-
-create table if not exists watchlist (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  stock_code text not null,
-  corp_name text,
-  alert_threshold numeric not null default -0.15,
-  created_at timestamptz not null default now(),
-  unique(user_id, stock_code)
-);
-
-alter table watchlist enable row level security;
-create policy "users manage own watchlist" on watchlist
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+alter table emissions_estimates enable row level security;
+create policy "public insert" on emissions_estimates for insert to anon with check (true);
+create policy "public select" on emissions_estimates for select to anon using (true);
+create policy "public update" on emissions_estimates for update to anon using (true) with check (true);
 ```
-
-워치리스트/로그인 기능을 쓰려면 Supabase 프로젝트의 Authentication 설정에서 이메일 인증(Confirm email)을 꺼두면 가입 즉시 로그인할 수 있어 데모하기 편합니다 (Authentication → Providers → Email → Confirm email 끄기).
 
 ## Railway 배포
 
 1. 이 저장소를 GitHub에 올린 뒤 Railway에서 "New Project" → "Deploy from GitHub repo"로 연결
 2. Railway 프로젝트 설정의 Variables에 위 환경변수 4개를 등록
-3. `Procfile`을 자동으로 인식해 `streamlit run` 명령으로 배포됩니다 (별도 빌드 설정 불필요)
+3. `data/emissions_training_data.csv`, `data/emissions_model.pkl`은 미리 학습해서 저장소에
+   커밋해두어야 배포 환경에서 바로 동작함 (배포 서버에서 재학습하지 않음)
+4. `Procfile`을 자동으로 인식해 `streamlit run` 명령으로 배포됨
 
 ## 프로젝트 구조
 
 ```
 src/
-  fetch_dart.py       DART API 연동 (기업 검색, 재무제표, 주식총수)
-  normalize.py        계정과목 표준화 (회사/연도별 계정명 불일치 처리)
-  ratios.py           재무비율 계산
-  dcf.py              DCF 밸류에이션 (2가지 방식)
-  relative_valuation.py  PER/PBR/EV-EBIT 상대가치평가
-  market_data.py      실시간 주가 조회
-  llm_report.py       Claude API 기반 리포트 생성
-  db.py               Supabase 저장/조회/워치리스트 (세션별 클라이언트 주입)
-  auth.py             Supabase Auth 로그인/회원가입
-  analysis.py         전체 파이프라인 통합 (CLI/대시보드 공용)
-  main.py             CLI 실행 진입점
-  app.py              Streamlit 대시보드
+  fetch_dart.py             DART API 연동 (기업 검색, 재무제표)
+  normalize.py              계정과목 표준화 (매출액/매출원가 등)
+  emissions_data.py         K-ETS 배출량 데이터 로드 + DART 기업명 매칭
+  emissions_model.py        회귀모델 학습/예측 + Scope 3 확장 로직
+  build_emissions_dataset.py  학습 데이터셋 구축 스크립트 (1회 실행)
+  train_model.py            모델 학습 스크립트 (1회 실행)
+  llm_report.py             Claude API 기반 리포트 생성
+  db.py                     Supabase 저장/조회
+  analysis.py               전체 파이프라인 통합 (CLI/대시보드 공용)
+  main.py                   CLI 실행 진입점
+  app.py                    Streamlit 대시보드
+data/
+  emissions_raw.csv          K-ETS 원본 배출량 데이터
+  emissions_training_data.csv  매칭+결합된 학습 데이터셋
+  emissions_model.pkl         학습된 모델 (커밋 대상)
 ```
+
+## 모델의 한계 (투명하게 공개)
+
+- Scope 3 배율(x3)은 전산업 평균이며 업종별 정교화는 향후 과제
+- 학습 데이터가 K-ETS 대상(주로 제조·에너지·폐기물 등 배출 다배출 업종)에 편중되어,
+  서비스업 등 분포 밖 기업에서는 정확도가 낮을 수 있음
+- 매출원가 미공시 기업은 매출액의 70%로 임의 대체

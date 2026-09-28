@@ -12,6 +12,12 @@ load_dotenv()
 API_KEY = os.getenv("OPENDART_API_KEY")
 BASE_URL = "https://opendart.fss.or.kr/api"
 
+# 연결을 재사용하는 공유 세션. requests.get()을 매번 새로 호출하면 매 요청마다 새
+# TCP/TLS 연결을 맺어 대량 조회(수백 개 기업) 시 소켓이 급격히 쌓이고 느려진다.
+_session = requests.Session()
+_adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10)
+_session.mount("https://", _adapter)
+
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 _CORP_CODE_PATH = os.path.join(_DATA_DIR, "CORPCODE.xml")
 
@@ -30,7 +36,7 @@ def download_corp_codes(force: bool = False) -> str:
     if os.path.exists(_CORP_CODE_PATH) and not force:
         return _CORP_CODE_PATH
 
-    resp = requests.get(f"{BASE_URL}/corpCode.xml", params={"crtfc_key": API_KEY}, timeout=30)
+    resp = _session.get(f"{BASE_URL}/corpCode.xml", params={"crtfc_key": API_KEY}, timeout=30)
     resp.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
         z.extract("CORPCODE.xml", _DATA_DIR)
@@ -62,7 +68,7 @@ def get_financial_statements(corp_code: str, year: int, reprt_code: str = "11011
     fs_div: CFS=연결재무제표, OFS=별도(개별)재무제표
     """
     _ensure_api_key()
-    resp = requests.get(
+    resp = _session.get(
         f"{BASE_URL}/fnlttSinglAcntAll.json",
         params={
             "crtfc_key": API_KEY,
@@ -80,7 +86,7 @@ def get_financial_statements(corp_code: str, year: int, reprt_code: str = "11011
 def get_common_shares_outstanding(corp_code: str, year: int, reprt_code: str = "11011") -> int | None:
     """보통주 유통주식수(발행주식총수 - 자기주식수)를 조회한다."""
     _ensure_api_key()
-    resp = requests.get(
+    resp = _session.get(
         f"{BASE_URL}/stockTotqySttus.json",
         params={
             "crtfc_key": API_KEY,

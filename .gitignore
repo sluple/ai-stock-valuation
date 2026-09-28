@@ -9,7 +9,7 @@ __pycache__/
 .venv/
 venv/
 
-data/
+data/CORPCODE.xml
 output/
 
 .streamlit/
