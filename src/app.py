@@ -13,12 +13,21 @@ from llm_report import generate_report
 
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="leaf", layout="wide")
 
-# ── 색상 팔레트 (탄소/환경 테마: 초록 계열을 기본으로, 서로 다른 지표는 명확히 구분되는 색으로) ──
-COLOR_ACTUAL = "#0D9488"     # 실제 공시값 (가장 신뢰도 높음 — 틸)
-COLOR_MODEL = "#2563EB"      # 회귀모델 추정치 (파랑)
-COLOR_BENCHMARK = "#D97706"  # 업종평균 추정치 (주황)
-COLOR_SCOPE3 = "#64748B"     # Scope 3 (중립 슬레이트)
-COLOR_PRIMARY = "#059669"
+# ── 색상 팔레트: masstige.io 레퍼런스(흰 배경 + 검정 텍스트 + 라임 포인트) 참고 ──
+BG = "#FFFFFF"
+BG2 = "#F4F4F2"
+INK = "#0B0B0B"
+INK2 = "#43433F"
+MUT = "#8A8A85"
+LINE = "#E4E4E0"
+DARK = "#0B0B0B"
+ACCENT = "#DDFF4F"
+ACCENT2 = "#B9E000"
+
+COLOR_ACTUAL = INK          # 실제 공시값 (가장 신뢰도 높음 — 검정)
+COLOR_MODEL = "#A8C6FF"     # 회귀모델 추정치 (연한 파랑)
+COLOR_BENCHMARK = ACCENT2   # 업종평균 추정치 (올리브라임)
+COLOR_SCOPE3 = MUT          # Scope 3 (중립 회색)
 
 GLOSSARY = [
     ("Scope 1", "회사가 직접 태워서 나오는 배출 (공장 보일러, 회사 차량 연료 등)."),
@@ -36,29 +45,74 @@ def fmt_ton(x: float | None) -> str:
 
 # ── 전역 스타일 ──────────────────────────────────────────────────────────
 st.markdown(
-    """
+    f"""
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
     <style>
-        .block-container { padding-top: 1.5rem; max-width: 1200px; }
-        [data-testid="stMetric"] {
-            background: #F0FDF4;
-            border: 1px solid #BBF7D0;
-            border-radius: 12px;
-            padding: 1rem 1.1rem;
-        }
-        [data-testid="stMetricLabel"] { color: #065F46; font-weight: 600; }
-        [data-testid="stMetricValue"] { color: #064E3B; }
-        div[data-testid="stExpander"] details summary {
-            font-weight: 600;
-            color: #065F46;
-        }
-        .hero {
-            background: linear-gradient(135deg, #064E3B 0%, #0D9488 100%);
-            padding: 1.75rem 2rem;
+        html, body, [class*="css"] {{
+            font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+        }}
+        .stApp {{ background: {BG}; }}
+        .block-container {{ padding-top: 1.5rem; max-width: 1200px; }}
+
+        h1, h2, h3, h4 {{ font-weight: 800 !important; letter-spacing: -0.03em; color: {INK}; }}
+
+        [data-testid="stMetric"] {{
+            background: {BG};
+            border: 1px solid {LINE};
             border-radius: 16px;
+            padding: 1rem 1.1rem;
+        }}
+        [data-testid="stMetricLabel"] {{
+            color: {MUT}; font-weight: 700; font-size: 0.78rem;
+            letter-spacing: 0.02em; text-transform: uppercase;
+        }}
+        [data-testid="stMetricValue"] {{ color: {INK}; font-weight: 800; letter-spacing: -0.03em; }}
+
+        div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 14px; }}
+        div[data-testid="stExpander"] details summary {{ font-weight: 700; color: {INK}; }}
+
+        div[data-testid="stContainer"] {{ border-radius: 16px !important; }}
+
+        [data-testid="stSidebar"] {{ background: {BG2}; border-right: 1px solid {LINE}; }}
+
+        .stButton > button[kind="primary"] {{
+            background: {ACCENT} !important;
+            color: {INK} !important;
+            border: none !important;
+            font-weight: 800 !important;
+            border-radius: 100px !important;
+            letter-spacing: -0.01em;
+        }}
+        .stButton > button[kind="primary"]:hover {{ background: {ACCENT2} !important; }}
+        .stButton > button[kind="primary"]:disabled {{
+            background: {LINE} !important; color: {MUT} !important;
+        }}
+
+        .stTabs [data-baseweb="tab"] {{ font-weight: 700; color: {MUT}; }}
+        .stTabs [aria-selected="true"] {{ color: {INK} !important; }}
+
+        .hero {{
+            background: {DARK};
+            padding: 2.2rem 2rem;
+            border-radius: 20px;
             margin-bottom: 1.5rem;
-        }
-        .hero h1 { color: white; margin: 0; font-size: 1.9rem; }
-        .hero p { color: #D1FAE5; margin: 0.4rem 0 0 0; font-size: 0.95rem; }
+        }}
+        .hero__eyebrow {{
+            display: inline-flex; align-items: center; gap: 8px;
+            color: {MUT}; font-size: 0.78rem; font-weight: 700;
+            letter-spacing: 0.03em; margin-bottom: 0.6rem;
+        }}
+        .hero__eyebrow i {{
+            width: 6px; height: 6px; border-radius: 50%; background: {ACCENT}; display: inline-block;
+        }}
+        .hero h1 {{
+            color: #fff !important; margin: 0; font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+            letter-spacing: -0.04em; line-height: 1.15;
+        }}
+        .hero h1 mark {{ background: none; color: {ACCENT}; }}
+        .hero p {{ color: #B7B7B0; margin: 0.6rem 0 0 0; font-size: 0.95rem; line-height: 1.6; max-width: 62ch; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -67,7 +121,8 @@ st.markdown(
 st.markdown(
     """
     <div class="hero">
-        <h1>AI 탄소배출량 추정기</h1>
+        <div class="hero__eyebrow"><i></i>SCOPE 1 · 2 · 3 ESTIMATOR</div>
+        <h1>AI가 재무제표만 보고,<br><mark>탄소배출량</mark>을 추정합니다.</h1>
         <p>기업의 재무데이터(매출액·매출원가)로 Scope 1+2 배출량을 추정하고,
         측정이 거의 불가능한 Scope 3(공급망 전체 배출량)까지 확장 추정합니다.</p>
     </div>
