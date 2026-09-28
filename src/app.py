@@ -2,19 +2,23 @@
 
 실행: streamlit run app.py
 """
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 import analysis
 import db
+import fetch_dart
 from llm_report import generate_report
 
-st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="chart", layout="wide")
+st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="leaf", layout="wide")
 
-COLOR_ACTUAL = "#059669"    # 실제 공시값 (신뢰도 높음 — 초록)
-COLOR_MODEL = "#2563EB"     # 회귀모델 추정치
-COLOR_BENCHMARK = "#F97316"  # 업종평균 추정치
-COLOR_SCOPE3 = "#6B7280"    # Scope 3 (중립 회색)
+# ── 색상 팔레트 (탄소/환경 테마: 초록 계열을 기본으로, 서로 다른 지표는 명확히 구분되는 색으로) ──
+COLOR_ACTUAL = "#0D9488"     # 실제 공시값 (가장 신뢰도 높음 — 틸)
+COLOR_MODEL = "#2563EB"      # 회귀모델 추정치 (파랑)
+COLOR_BENCHMARK = "#D97706"  # 업종평균 추정치 (주황)
+COLOR_SCOPE3 = "#64748B"     # Scope 3 (중립 슬레이트)
+COLOR_PRIMARY = "#059669"
 
 GLOSSARY = [
     ("Scope 1", "회사가 직접 태워서 나오는 배출 (공장 보일러, 회사 차량 연료 등)."),
@@ -30,10 +34,45 @@ def fmt_ton(x: float | None) -> str:
     return f"{x:,.0f} tCO2eq" if x is not None else "정보 없음"
 
 
-st.title("AI 탄소배출량 추정기")
-st.caption(
-    "기업의 재무데이터(매출액·매출원가)로 Scope 1+2 배출량을 추정하고, "
-    "측정이 거의 불가능한 Scope 3(공급망 전체 배출량)까지 확장 추정합니다."
+# ── 전역 스타일 ──────────────────────────────────────────────────────────
+st.markdown(
+    """
+    <style>
+        .block-container { padding-top: 1.5rem; max-width: 1200px; }
+        [data-testid="stMetric"] {
+            background: #F0FDF4;
+            border: 1px solid #BBF7D0;
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+        }
+        [data-testid="stMetricLabel"] { color: #065F46; font-weight: 600; }
+        [data-testid="stMetricValue"] { color: #064E3B; }
+        div[data-testid="stExpander"] details summary {
+            font-weight: 600;
+            color: #065F46;
+        }
+        .hero {
+            background: linear-gradient(135deg, #064E3B 0%, #0D9488 100%);
+            padding: 1.75rem 2rem;
+            border-radius: 16px;
+            margin-bottom: 1.5rem;
+        }
+        .hero h1 { color: white; margin: 0; font-size: 1.9rem; }
+        .hero p { color: #D1FAE5; margin: 0.4rem 0 0 0; font-size: 0.95rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="hero">
+        <h1>AI 탄소배출량 추정기</h1>
+        <p>기업의 재무데이터(매출액·매출원가)로 Scope 1+2 배출량을 추정하고,
+        측정이 거의 불가능한 Scope 3(공급망 전체 배출량)까지 확장 추정합니다.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 with st.expander("어려운 용어가 있으면 여기를 눌러 확인하세요"):
@@ -50,24 +89,42 @@ except FileNotFoundError:
     industries = []
     st.error("학습된 모델이 없습니다. `python build_emissions_dataset.py` 후 `python train_model.py`를 먼저 실행하세요.")
 
+# ── 사이드바: 회사 이름 검색 ──────────────────────────────────────────────
 with st.sidebar:
     st.header("분석하고 싶은 회사")
-    target_code = st.text_input("종목코드", value="005930", help="예: 삼성전자 = 005930")
+    company_query = st.text_input(
+        "회사 이름", value="삼성전자", placeholder="예: 삼성전자, SK하이닉스, 포스코"
+    )
+    candidates = fetch_dart.search_corp_by_name(company_query) if company_query else []
+
+    selected_corp = None
+    if candidates:
+        option_labels = [f"{c['corp_name']}  ·  {c['stock_code'] or '비상장'}" for c in candidates]
+        picked = st.selectbox("찾은 회사 중에서 선택하세요", range(len(candidates)), format_func=lambda i: option_labels[i])
+        selected_corp = candidates[picked]
+    elif company_query:
+        st.caption("검색 결과가 없어요. 정식 회사명을 입력해보세요.")
+
+    st.divider()
     industry_choice = st.selectbox(
-        "업종 (배출권거래제 공시 대상 기업은 자동 감지되므로 그대로 두세요)",
+        "업종 (배출권거래제 공시 대상 기업은 자동 감지돼요)",
         ["(자동 감지)"] + industries,
     )
-    run_button = st.button("분석 시작", type="primary", width="stretch")
+    run_button = st.button(
+        "분석 시작", type="primary", width="stretch", disabled=selected_corp is None
+    )
 
 if "result" not in st.session_state:
     st.session_state.result = None
     st.session_state.error = None
 
-if run_button:
+if run_button and selected_corp:
     industry_override = None if industry_choice == "(자동 감지)" else industry_choice
     with st.spinner("재무데이터를 불러오고 배출량을 추정하는 중이에요..."):
         try:
-            st.session_state.result = analysis.run_analysis(target_code, industry_override=industry_override)
+            st.session_state.result = analysis.run_analysis_for_corp(
+                selected_corp, industry_override=industry_override
+            )
             st.session_state.error = None
             st.session_state.report_text = None
             st.session_state.report_key = None
@@ -93,12 +150,12 @@ if st.session_state.error:
 result = st.session_state.result
 
 if result is None:
-    st.info("왼쪽에서 종목코드를 입력하고 '분석 시작'을 눌러주세요.")
+    st.info("왼쪽에서 회사 이름을 검색하고 '분석 시작'을 눌러주세요.")
     st.stop()
 
 corp = result.corp
-st.subheader(f"{corp['corp_name']} ({corp['stock_code'] or '비상장'})")
-st.caption(f"업종: {result.industry}  ·  {result.industry_source}")
+st.subheader(f"{corp['corp_name']}  ·  {corp['stock_code'] or '비상장'}")
+st.caption(f"업종: {result.industry}   |   {result.industry_source}")
 
 for w in result.warnings:
     st.warning(w)
@@ -115,73 +172,84 @@ col4.metric(
     help="Scope1+2 + Scope3 합계",
 )
 
+st.write("")
 tab1, tab2, tab3, tab4 = st.tabs(["배출량 추정 결과", "모델 설명", "AI 리포트", "최근 분석 기록"])
 
 with tab1:
-    st.markdown("#### Scope 1+2 추정 방법 비교")
-    labels = []
-    values = []
-    colors = []
-    if result.actual_scope12 is not None:
-        labels.append("실제 공시값")
-        values.append(result.actual_scope12)
-        colors.append(COLOR_ACTUAL)
-    labels.append("회귀모델 추정")
-    values.append(result.model_estimate)
-    colors.append(COLOR_MODEL)
-    labels.append("업종평균 추정")
-    values.append(result.benchmark_estimate)
-    colors.append(COLOR_BENCHMARK)
+    with st.container(border=True):
+        st.markdown("#### Scope 1+2 추정 방법 비교")
+        labels = []
+        values = []
+        colors = []
+        if result.actual_scope12 is not None:
+            labels.append("실제 공시값")
+            values.append(result.actual_scope12)
+            colors.append(COLOR_ACTUAL)
+        labels.append("회귀모델 추정")
+        values.append(result.model_estimate)
+        colors.append(COLOR_MODEL)
+        labels.append("업종평균 추정")
+        values.append(result.benchmark_estimate)
+        colors.append(COLOR_BENCHMARK)
 
-    fig1 = go.Figure(
-        go.Bar(x=labels, y=values, marker_color=colors, text=[fmt_ton(v) for v in values], textposition="outside")
-    )
-    fig1.update_layout(yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=380, showlegend=False)
-    st.plotly_chart(fig1, width="stretch")
-
-    st.markdown("#### Scope 1+2 vs Scope 3 비교")
-    base = scope12_display
-    fig2 = go.Figure(
-        go.Bar(
-            x=["Scope 1+2", "Scope 3 (추정)"],
-            y=[base, result.scope3_estimate],
-            marker_color=[COLOR_MODEL, COLOR_SCOPE3],
-            text=[fmt_ton(base), fmt_ton(result.scope3_estimate)],
-            textposition="outside",
+        fig1 = go.Figure(
+            go.Bar(x=labels, y=values, marker_color=colors, text=[fmt_ton(v) for v in values], textposition="outside")
         )
-    )
-    fig2.update_layout(yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=380, showlegend=False)
-    st.plotly_chart(fig2, width="stretch")
-    st.caption(
-        "Scope 3는 CDP(글로벌 ESG 공시기구) 조사에서 나온 '전산업 평균 Scope3 비중(약 75%)'을 적용한 값이에요. "
-        "즉 Scope1+2의 약 3배로 계산했고, 업종별 정교화는 아직 안 되어 있어요."
-    )
+        fig1.update_layout(yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=360, showlegend=False)
+        st.plotly_chart(fig1, width="stretch")
+
+    st.write("")
+    with st.container(border=True):
+        st.markdown("#### Scope 1+2 vs Scope 3 비교")
+        base = scope12_display
+        fig2 = go.Figure(
+            go.Bar(
+                x=["Scope 1+2", "Scope 3 (추정)"],
+                y=[base, result.scope3_estimate],
+                marker_color=[COLOR_MODEL, COLOR_SCOPE3],
+                text=[fmt_ton(base), fmt_ton(result.scope3_estimate)],
+                textposition="outside",
+            )
+        )
+        fig2.update_layout(yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=360, showlegend=False)
+        st.plotly_chart(fig2, width="stretch")
+        st.caption(
+            "Scope 3는 CDP(글로벌 ESG 공시기구) 조사에서 나온 '전산업 평균 Scope3 비중(약 75%)'을 적용한 값이에요. "
+            "즉 Scope1+2의 약 3배로 계산했고, 업종별 정교화는 아직 안 되어 있어요."
+        )
 
 with tab2:
-    st.markdown("#### 모델 성능 (홀드아웃 검증)")
-    m = result.model_metrics
-    st.write(f"- R² (설명력): {m['r2']:.3f}")
-    st.write(f"- 학습 데이터: {m['n_train']}개 기업 / 검증 데이터: {m['n_test']}개 기업")
-    st.caption("R²는 1에 가까울수록 모델이 실제 배출량 패턴을 잘 설명한다는 뜻이에요.")
+    with st.container(border=True):
+        st.markdown("#### 모델 성능 (홀드아웃 검증)")
+        m = result.model_metrics
+        st.write(f"- R² (설명력): {m['r2']:.3f}")
+        st.write(f"- 학습 데이터: {m['n_train']}개 기업 / 검증 데이터: {m['n_test']}개 기업")
+        st.caption("R²는 1에 가까울수록 모델이 실제 배출량 패턴을 잘 설명한다는 뜻이에요.")
 
-    st.markdown("#### 방법론")
-    st.markdown(
-        "1. **회귀모델**: 매출액·매출원가·업종을 특징으로 RandomForest 모델이 배출량을 예측해요.\n"
-        "2. **업종평균(EEIO 방식)**: 같은 업종 기업들의 '배출량 ÷ 매출액' 중앙값을 이 회사 매출액에 곱해요.\n"
-        "3. 두 방법을 같이 보여주는 이유: 하나만 보면 그 추정치를 얼마나 믿어야 할지 판단하기 어렵기 때문이에요. "
-        "두 값이 비슷하면 추정이 안정적이라는 뜻이고, 크게 다르면 이 회사가 업종 평균과 다른 특징(예: 최신 저탄소 설비)을 "
-        "가지고 있다는 신호일 수 있어요."
-    )
-    st.write(f"이 회사에 적용된 업종평균 배출집약도: **{result.benchmark_estimate / (result.financials.get('매출액', 1) / 1e8):,.0f} tCO2eq / 매출 1억원** ({result.benchmark_source})")
+    st.write("")
+    with st.container(border=True):
+        st.markdown("#### 방법론")
+        st.markdown(
+            "1. **회귀모델**: 매출액·매출원가·업종을 특징으로 RandomForest 모델이 배출량을 예측해요.\n"
+            "2. **업종평균(EEIO 방식)**: 같은 업종 기업들의 '배출량 ÷ 매출액' 중앙값을 이 회사 매출액에 곱해요.\n"
+            "3. 두 방법을 같이 보여주는 이유: 하나만 보면 그 추정치를 얼마나 믿어야 할지 판단하기 어렵기 때문이에요. "
+            "두 값이 비슷하면 추정이 안정적이라는 뜻이고, 크게 다르면 이 회사가 업종 평균과 다른 특징(예: 최신 저탄소 설비)을 "
+            "가지고 있다는 신호일 수 있어요."
+        )
+        st.write(
+            f"이 회사에 적용된 업종평균 배출집약도: "
+            f"**{result.benchmark_estimate / (result.financials.get('매출액', 1) / 1e8):,.0f} tCO2eq / 매출 1억원** "
+            f"({result.benchmark_source})"
+        )
 
 with tab3:
     st.markdown("#### AI가 쉽게 풀어서 설명해주는 리포트")
-    if st.session_state.get("report_key") != target_code:
+    if st.session_state.get("report_key") != corp["corp_code"]:
         with st.spinner("AI가 리포트를 쓰는 중이에요..."):
             try:
                 context = analysis.build_llm_context(result)
                 st.session_state.report_text = generate_report(context)
-                st.session_state.report_key = target_code
+                st.session_state.report_key = corp["corp_code"]
                 try:
                     db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
                 except Exception:  # noqa: BLE001
@@ -190,7 +258,8 @@ with tab3:
                 st.session_state.report_text = None
                 st.error(f"리포트 생성에 실패했어요: {e}")
     if st.session_state.get("report_text"):
-        st.markdown(st.session_state.report_text)
+        with st.container(border=True):
+            st.markdown(st.session_state.report_text)
 
 with tab4:
     st.markdown("#### 지금까지 분석했던 기록")
@@ -203,8 +272,6 @@ with tab4:
             rows = []
             st.error(f"기록을 불러오지 못했어요: {e}")
         if rows:
-            import pandas as pd
-
             history_df = pd.DataFrame(rows)[
                 ["created_at", "corp_name", "industry", "actual_scope12", "model_estimate_scope12", "scope3_estimate"]
             ].rename(

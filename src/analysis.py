@@ -48,12 +48,16 @@ def _find_actual_disclosure(corp_code: str) -> tuple[float | None, str | None]:
 
 
 def run_analysis(stock_code: str, industry_override: str | None = None) -> EmissionsResult:
-    warnings: list[str] = []
-
+    """종목코드/기업명 완전일치로 찾아서 분석한다 (CLI 등에서 사용)."""
     matches = find_corp_code(stock_code)
     if not matches:
         raise ValueError(f"'{stock_code}' 기업을 찾지 못했습니다.")
-    corp = matches[0]
+    return run_analysis_for_corp(matches[0], industry_override)
+
+
+def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> EmissionsResult:
+    """이미 찾아놓은 기업 정보(corp_code 포함)로 바로 분석한다 (이름 검색 UI 등에서 사용)."""
+    warnings: list[str] = []
 
     data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="CFS")
     if data.get("status") != "000":
@@ -138,7 +142,7 @@ def build_llm_context(result: EmissionsResult) -> dict:
         },
         "모델_한계": [
             "Scope3는 CDP 평균치(전체 배출량의 약 75%) 기반 배율(x3)을 곱한 값으로, 업종별 정교화는 안 되어 있음",
-            "회귀모델은 약 500여개 배출권거래제 대상 기업 데이터로 학습되어, 그 분포를 벗어난 기업(예: 서비스업)에서는 정확도가 낮을 수 있음",
+            "회귀모델은 약 250여개 배출권거래제 대상 기업 데이터로 학습되어, 그 분포를 벗어난 기업(예: 서비스업)에서는 정확도가 낮을 수 있음",
             "매출원가가 공시되지 않은 경우 매출액의 70%로 임의 대체함",
         ],
     }

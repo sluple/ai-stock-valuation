@@ -43,22 +43,60 @@ def download_corp_codes(force: bool = False) -> str:
     return _CORP_CODE_PATH
 
 
-def find_corp_code(name_or_stock_code: str) -> list[dict]:
-    """기업명 또는 종목코드로 corp_code를 검색한다."""
+_all_corps_cache: list[dict] | None = None
+
+
+def _load_all_corps() -> list[dict]:
+    """CORPCODE.xml(약 30MB)을 매 검색마다 다시 파싱하면 느리므로 최초 1회만 파싱해 캐싱한다."""
+    global _all_corps_cache
+    if _all_corps_cache is not None:
+        return _all_corps_cache
+
     path = download_corp_codes()
     tree = ET.parse(path)
     root = tree.getroot()
 
-    matches = []
+    corps = []
     for item in root.findall("list"):
         corp_name = (item.findtext("corp_name") or "").strip()
         stock_code = (item.findtext("stock_code") or "").strip()
         corp_code = (item.findtext("corp_code") or "").strip()
-        if not stock_code:
-            continue  # 비상장사는 밸류에이션 대상에서 제외
-        if stock_code == name_or_stock_code or corp_name == name_or_stock_code:
-            matches.append({"corp_code": corp_code, "corp_name": corp_name, "stock_code": stock_code})
+        if corp_name:
+            corps.append({"corp_code": corp_code, "corp_name": corp_name, "stock_code": stock_code})
+
+    _all_corps_cache = corps
+    return corps
+
+
+def find_corp_code(name_or_stock_code: str) -> list[dict]:
+    """기업명 또는 종목코드로 corp_code를 정확히 일치하는 것만 검색한다."""
+    matches = []
+    for corp in _load_all_corps():
+        if not corp["stock_code"]:
+            continue  # 비상장사는 제외
+        if corp["stock_code"] == name_or_stock_code or corp["corp_name"] == name_or_stock_code:
+            matches.append(corp)
     return matches
+
+
+def search_corp_by_name(query: str, limit: int = 15) -> list[dict]:
+    """회사 이름 일부로 검색한다 (예: "삼성" -> 삼성전자, 삼성SDI, 삼성물산 ...).
+
+    상장사를 우선, 이름이 정확히 일치하거나 짧을수록(더 구체적일수록) 우선순위를 준다.
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    matches = [c for c in _load_all_corps() if query in c["corp_name"]]
+
+    def sort_key(c: dict) -> tuple:
+        is_exact = c["corp_name"] != query
+        is_unlisted = not bool(c["stock_code"])
+        return (is_exact, is_unlisted, len(c["corp_name"]))
+
+    matches.sort(key=sort_key)
+    return matches[:limit]
 
 
 def get_financial_statements(corp_code: str, year: int, reprt_code: str = "11011", fs_div: str = "CFS") -> dict:
