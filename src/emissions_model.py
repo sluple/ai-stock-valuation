@@ -48,6 +48,19 @@ def compute_industry_benchmark(df: pd.DataFrame) -> pd.DataFrame:
     return benchmark
 
 
+# 대기업일수록 여러 사업을 겸영해 "매출 전체 vs 배출 사업장 하나"의 불일치가 커진다
+# (실측: 매출 상위 20% 기업의 3배 이내 정확도 70% vs 하위 80% 83%). 매출 규모가 업종 내
+# 전형적 기업보다 훨씬 크면, 추정 신뢰도가 낮다는 경고를 낼 수 있도록 업종별 매출 중앙값을 같이 저장한다.
+SCALE_WARNING_MULTIPLE = 5.0
+
+
+def compute_industry_revenue_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """업종별 매출액 중앙값 — 목표 기업의 규모가 업종 내에서 이상치인지 판단하는 데 쓴다."""
+    stats = df.groupby("계획업종")["매출액"].median().reset_index()
+    stats.columns = ["계획업종", "매출액_중앙값"]
+    return stats
+
+
 def train_model(df: pd.DataFrame) -> dict:
     """RandomForest 회귀모델을 학습하고, 홀드아웃 검증 성능과 함께 반환한다.
 
@@ -61,7 +74,9 @@ def train_model(df: pd.DataFrame) -> dict:
     df["매출원가"] = df["매출원가"].fillna(df["매출액"] * 0.7)  # 결측 시 업계 평균 원가율로 대체
 
     industry_benchmark = compute_industry_benchmark(df)
+    industry_revenue_stats = compute_industry_revenue_stats(df)
     overall_median_intensity = float((df["배출량_tCO2eq"] / (df["매출액"] / 1e8)).median())
+    overall_median_revenue = float(df["매출액"].median())
 
     intensity_map = dict(zip(industry_benchmark["계획업종"], industry_benchmark["배출집약도_톤per억원"]))
     df["업종추정치"] = df["계획업종"].map(intensity_map).fillna(overall_median_intensity) * (df["매출액"] / 1e8)
@@ -83,8 +98,10 @@ def train_model(df: pd.DataFrame) -> dict:
     artifact = {
         "model": model,
         "industry_benchmark": industry_benchmark,
+        "industry_revenue_stats": industry_revenue_stats,
         "metrics": {"r2": r2, "mae_log": mae_log, "approx_fold_error": approx_fold_error, "n_train": len(X_train), "n_test": len(X_test)},
         "overall_median_intensity": overall_median_intensity,
+        "overall_median_revenue": overall_median_revenue,
     }
     return artifact
 
@@ -119,11 +136,24 @@ def predict_scope12(artifact: dict, revenue: float, cogs: float | None, industry
     pred_log = artifact["model"].predict(X)[0]
     model_estimate = float(np.expm1(pred_log))
 
+    # 규모 이상치 경고: 이 기업 매출이 같은 업종의 전형적 기업보다 훨씬 크면, 여러 사업을
+    # 겸영하는 대기업/복합기업일 가능성이 높다 — 실측상 이런 기업에서 오차가 유의하게 커진다.
+    rev_stats = artifact.get("industry_revenue_stats")
+    industry_median_revenue = artifact.get("overall_median_revenue")
+    if rev_stats is not None:
+        row_rev = rev_stats[rev_stats["계획업종"] == industry]
+        if not row_rev.empty:
+            industry_median_revenue = float(row_rev["매출액_중앙값"].iloc[0])
+    scale_ratio = revenue / industry_median_revenue if industry_median_revenue else 1.0
+    scale_warning = scale_ratio >= SCALE_WARNING_MULTIPLE
+
     return {
         "model_estimate": model_estimate,
         "benchmark_estimate": benchmark_estimate,
         "benchmark_source": benchmark_source,
         "benchmark_intensity_per_100m": intensity,
+        "scale_ratio": scale_ratio,
+        "scale_warning": scale_warning,
     }
 
 

@@ -26,6 +26,8 @@ class EmissionsResult:
     benchmark_source: str
     scope3_estimate: float
     model_metrics: dict
+    scale_ratio: float
+    scale_warning: bool
     warnings: list[str] = field(default_factory=list)
 
 
@@ -92,6 +94,12 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
     if actual_scope12 is None:
         warnings.append("이 기업은 배출권거래제 공시 대상이 아니어서 Scope 1+2도 모델 추정치입니다.")
 
+    if preds["scale_warning"]:
+        warnings.append(
+            f"이 기업의 매출액은 같은 업종 내 전형적 기업의 약 {preds['scale_ratio']:.0f}배입니다. "
+            "여러 사업을 겸영하는 대기업/복합기업일 가능성이 높아, 추정 신뢰도가 낮을 수 있습니다."
+        )
+
     return EmissionsResult(
         corp=corp,
         financials=fin,
@@ -103,6 +111,8 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
         benchmark_source=preds["benchmark_source"],
         scope3_estimate=scope3,
         model_metrics=artifact["metrics"],
+        scale_ratio=preds["scale_ratio"],
+        scale_warning=preds["scale_warning"],
         warnings=warnings,
     )
 
@@ -136,6 +146,8 @@ def build_llm_context(result: EmissionsResult) -> dict:
         "업종평균_추정_Scope12": safe_round(result.benchmark_estimate, 0),
         "업종평균_출처": result.benchmark_source,
         "Scope3_추정치": safe_round(result.scope3_estimate, 0),
+        "업종대비_매출규모_배율": safe_round(result.scale_ratio, 1),
+        "규모_이상치_경고": result.scale_warning,
         "모델_성능": {
             "R2": safe_round(result.model_metrics.get("r2"), 3),
             "학습표본수": result.model_metrics.get("n_train"),
@@ -145,5 +157,6 @@ def build_llm_context(result: EmissionsResult) -> dict:
             "Scope3는 CDP 평균치(전체 배출량의 약 75%) 기반 배율(x3)을 곱한 값으로, 업종별 정교화는 안 되어 있음",
             "회귀모델은 약 250여개 배출권거래제 대상 기업 데이터로 학습되어, 그 분포를 벗어난 기업(예: 서비스업)에서는 정확도가 낮을 수 있음",
             "매출원가가 공시되지 않은 경우 매출액의 70%로 임의 대체함",
+            "여러 사업을 겸영하는 대기업/복합기업은 매출 전체가 하나의 업종으로 뭉뚱그려져 정확도가 낮아짐 (실측: 매출 상위 20% 기업의 3배 이내 정확도 70% vs 하위 80% 83%)",
         ],
     }
