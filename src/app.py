@@ -154,42 +154,67 @@ def chart_scale_bullet(revenue, median_revenue, ratio, scale_warning):
     return fig
 
 
-def render_pipeline(revenue, cogs, benchmark_estimate, model_estimate):
-    """회귀모델이 내부적으로 매출액·매출원가·EEIO 업종추정치를 받아
-    model_estimate를 내놓기까지의 단계를 흐름도 HTML로 그린다."""
+def _pipe_box(label, value, cls=""):
+    return (
+        f'<div class="pipe-box {cls}">'
+        f'<div class="pb-label">{label}</div><div class="pb-value">{value}</div>'
+        f"</div>"
+    )
 
-    def box(label, value, cls=""):
-        return (
-            f'<div class="pipe-box {cls}">'
-            f'<div class="pb-label">{label}</div><div class="pb-value">{value}</div>'
-            f"</div>"
-        )
 
+_PIPE_DOWN = '<div class="pipe-center"><div class="pipe-down">↓</div></div>'
+
+
+def render_pipeline_inputs(revenue, cogs, benchmark_estimate):
     arrow = '<div class="pipe-arrow">→</div>'
-    down = '<div class="pipe-down">↓</div>'
-
-    html = '<div class="pipe-wrap">'
-    html += '<div class="pipe-row">'
-    html += box("매출액", f"{revenue:,.0f}원")
+    html = '<div class="pipe-wrap"><div class="pipe-row">'
+    html += _pipe_box("매출액", f"{revenue:,.0f}원")
     html += arrow
-    html += box("매출원가", f"{cogs:,.0f}원")
+    html += _pipe_box("매출원가", f"{cogs:,.0f}원")
     html += arrow
-    html += box("업종추정치 (EEIO)", f"{benchmark_estimate:,.0f} t", cls="pipe-eeio")
+    html += _pipe_box("업종추정치 (EEIO)", f"{benchmark_estimate:,.0f} t", cls="pipe-eeio")
     html += "</div>"
     html += (
-        '<div class="pipe-note">↑ 업종추정치는 "③ Scope 1+2 비교" 차트의 업종평균 추정값을 '
+        '<div class="pipe-note">↑ 업종추정치는 "① Scope 1+2 비교" 차트의 업종평균 추정값을 '
         "그대로 재사용한 것입니다 (업종 원-핫 인코딩 대신 타겟 인코딩)</div>"
     )
-    html += f'<div class="pipe-center">{down}</div>'
-    html += f'<div class="pipe-center">{box("log1p 변환", "3개 값 모두 log(1+x)")}</div>'
-    html += f'<div class="pipe-center">{down}</div>'
-    html += f'<div class="pipe-center">{box("RandomForest", "의사결정나무 300개 평균", cls="pipe-forest")}</div>'
-    html += f'<div class="pipe-center">{down}</div>'
-    html += f'<div class="pipe-center">{box("expm1 역변환", "로그 → tCO2eq 단위 복원")}</div>'
-    html += f'<div class="pipe-center">{down}</div>'
-    html += f'<div class="pipe-center">{box("회귀모델 추정치", f"{model_estimate:,.0f} tCO2eq", cls="pipe-final")}</div>'
+    html += _PIPE_DOWN
+    html += f'<div class="pipe-center">{_pipe_box("log1p 변환", "3개 값 모두 log(1+x)")}</div>'
+    html += _PIPE_DOWN
     html += "</div>"
     return html
+
+
+def render_pipeline_outputs(model_estimate):
+    html = '<div class="pipe-wrap">'
+    html += _PIPE_DOWN
+    html += f'<div class="pipe-center">{_pipe_box("expm1 역변환", "로그 → tCO2eq 단위 복원")}</div>'
+    html += _PIPE_DOWN
+    html += f'<div class="pipe-center">{_pipe_box("회귀모델 추정치", f"{model_estimate:,.0f} tCO2eq", cls="pipe-final")}</div>'
+    html += "</div>"
+    return html
+
+
+def chart_tree_scatter(tree_predictions, model_estimate):
+    """RandomForest 나무 300개 각각의 개별 예측치를 실제 값 그대로 산점도로 보여준다."""
+    n = len(tree_predictions)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=list(range(1, n + 1)), y=tree_predictions, mode="markers",
+        marker=dict(size=5, color=BLUE, opacity=0.55),
+        name="개별 나무 예측치", hovertemplate="나무 %{x}: %{y:,.0f} tCO2eq<extra></extra>",
+    ))
+    fig.add_hline(
+        y=model_estimate, line_color=ORANGE, line_width=2,
+        annotation_text=f"평균(최종 예측값) {model_estimate:,.0f} t",
+        annotation_font_color=ORANGE, annotation_position="top left",
+    )
+    fig.update_layout(
+        **PLOTLY_LAYOUT, height=260, showlegend=False,
+        xaxis=dict(title="나무 번호 (1~300)", gridcolor=LINE, linecolor=BASELINE, title_font=dict(size=11)),
+        yaxis=dict(title="예측치 (tCO2eq)", gridcolor=LINE, zerolinecolor=BASELINE, title_font=dict(size=11)),
+    )
+    return fig
 
 
 # ── 전역 스타일 ──────────────────────────────────────────────────────────────
@@ -533,18 +558,17 @@ with st.container(border=True):
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="viz-desc">매출액·매출원가·업종추정치(EEIO) 세 값을 로그로 변환해 RandomForest 300개 나무에 넣고, 평균을 다시 원래 단위로 되돌립니다.</div>',
+        '<div class="viz-desc">매출액·매출원가·업종추정치(EEIO) 세 값을 로그로 변환해 RandomForest 300개 나무 각각에 넣고, 그 개별 예측치들을 평균내 다시 원래 단위로 되돌립니다.</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        render_pipeline(
-            result.financials.get("매출액", 0) or 0,
-            result.financials.get("매출원가") or (result.financials.get("매출액", 0) or 0) * 0.7,
-            result.benchmark_estimate,
-            result.model_estimate,
-        ),
-        unsafe_allow_html=True,
+    revenue_val = result.financials.get("매출액", 0) or 0
+    cogs_val = result.financials.get("매출원가") or revenue_val * 0.7
+    st.markdown(render_pipeline_inputs(revenue_val, cogs_val, result.benchmark_estimate), unsafe_allow_html=True)
+    st.plotly_chart(
+        chart_tree_scatter(result.tree_predictions, result.model_estimate),
+        width="stretch", config={"displayModeBar": False},
     )
+    st.markdown(render_pipeline_outputs(result.model_estimate), unsafe_allow_html=True)
 
 st.write("")
 

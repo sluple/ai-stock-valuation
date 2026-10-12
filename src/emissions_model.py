@@ -136,6 +136,12 @@ def predict_scope12(artifact: dict, revenue: float, cogs: float | None, industry
     pred_log = artifact["model"].predict(X)[0]
     model_estimate = float(np.expm1(pred_log))
 
+    # RandomForest는 내부적으로 나무 300개의 예측을 평균낸 값이다. 이 평균의 "구성"을
+    # 그대로 보여주기 위해, 나무 하나하나의 개별 예측치도 함께 반환한다 (시각화용).
+    tree_predictions = [
+        float(np.expm1(tree.predict(X)[0])) for tree in artifact["model"].estimators_
+    ]
+
     # 규모 이상치 경고: 이 기업 매출이 같은 업종의 전형적 기업보다 훨씬 크면, 여러 사업을
     # 겸영하는 대기업/복합기업일 가능성이 높다 — 실측상 이런 기업에서 오차가 유의하게 커진다.
     rev_stats = artifact.get("industry_revenue_stats")
@@ -154,6 +160,7 @@ def predict_scope12(artifact: dict, revenue: float, cogs: float | None, industry
         "benchmark_intensity_per_100m": intensity,
         "scale_ratio": scale_ratio,
         "scale_warning": scale_warning,
+        "tree_predictions": tree_predictions,
     }
 
 

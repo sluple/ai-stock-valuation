@@ -34,6 +34,7 @@ class EmissionsResult:
     scale_warning: bool
     estimate_divergence_ratio: float
     is_typical_pattern: bool
+    tree_predictions: list[float]
     warnings: list[str] = field(default_factory=list)
 
 
@@ -130,6 +131,7 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
         scale_warning=preds["scale_warning"],
         estimate_divergence_ratio=divergence_ratio,
         is_typical_pattern=is_typical_pattern,
+        tree_predictions=preds["tree_predictions"],
         warnings=warnings,
     )
 
