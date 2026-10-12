@@ -74,7 +74,27 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
     if data.get("status") != "000":
         data = get_financial_statements(corp["corp_code"], TARGET_YEAR, fs_div="CFS")
     if data.get("status") != "000":
-        raise ValueError(f"{TARGET_YEAR}년 재무제표 조회 실패: {data.get('message')}")
+        # 합병·분할 등으로 같은 이름의 corp_code가 여러 개 존재하는 경우가 있다
+        # (예: '삼성물산' — 2015년 합병으로 소멸한 구법인과, 그 이름을 이어받은 현존 법인).
+        # 선택된 corp_code에 데이터가 없으면, 같은 이름의 다른 상장 corp_code로 자동 재시도한다.
+        original_corp = corp
+        for alt in find_corp_code(corp["corp_name"]):
+            if alt["corp_code"] == corp["corp_code"]:
+                continue
+            alt_data = get_financial_statements(alt["corp_code"], TARGET_YEAR, fs_div="OFS")
+            if alt_data.get("status") != "000":
+                alt_data = get_financial_statements(alt["corp_code"], TARGET_YEAR, fs_div="CFS")
+            if alt_data.get("status") == "000":
+                corp = alt
+                data = alt_data
+                warnings.append(
+                    f"'{original_corp['corp_name']}'(종목코드 {original_corp['stock_code']})는 재무데이터가 없어, "
+                    f"같은 이름의 다른 종목코드({alt['stock_code']})로 자동 전환해 분석했습니다. "
+                    "(합병 등으로 같은 이름의 법인이 여러 개 등록된 경우일 수 있어요.)"
+                )
+                break
+        if data.get("status") != "000":
+            raise ValueError(f"{TARGET_YEAR}년 재무제표 조회 실패: {data.get('message')}")
     fin = build_financial_table(data.get("list", []))
     if "매출액" not in fin:
         raise ValueError(f"{TARGET_YEAR}년 매출액 데이터를 찾을 수 없습니다.")
