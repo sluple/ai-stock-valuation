@@ -61,9 +61,10 @@ st.markdown(
     <style>
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
-        header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
-        [data-testid="stToolbar"] {{ visibility: hidden; }}
+        header[data-testid="stHeader"] {{ background: transparent; height: 0; overflow: hidden; }}
+        [data-testid="stToolbar"] {{ visibility: hidden; display: none; }}
         [data-testid="stSidebarCollapsedControl"] {{ display: none; }}
+        [data-testid="stStatusWidget"] {{ display: none !important; }}
         .stDeployButton {{ display: none; }}
         #stDecoration {{ display: none; }}
 
