@@ -154,6 +154,44 @@ def chart_scale_bullet(revenue, median_revenue, ratio, scale_warning):
     return fig
 
 
+def render_pipeline(revenue, cogs, benchmark_estimate, model_estimate):
+    """회귀모델이 내부적으로 매출액·매출원가·EEIO 업종추정치를 받아
+    model_estimate를 내놓기까지의 단계를 흐름도 HTML로 그린다."""
+
+    def box(label, value, cls=""):
+        return (
+            f'<div class="pipe-box {cls}">'
+            f'<div class="pb-label">{label}</div><div class="pb-value">{value}</div>'
+            f"</div>"
+        )
+
+    arrow = '<div class="pipe-arrow">→</div>'
+    down = '<div class="pipe-down">↓</div>'
+
+    html = '<div class="pipe-wrap">'
+    html += '<div class="pipe-row">'
+    html += box("매출액", f"{revenue:,.0f}원")
+    html += arrow
+    html += box("매출원가", f"{cogs:,.0f}원")
+    html += arrow
+    html += box("업종추정치 (EEIO)", f"{benchmark_estimate:,.0f} t", cls="pipe-eeio")
+    html += "</div>"
+    html += (
+        '<div class="pipe-note">↑ 업종추정치는 "③ Scope 1+2 비교" 차트의 업종평균 추정값을 '
+        "그대로 재사용한 것입니다 (업종 원-핫 인코딩 대신 타겟 인코딩)</div>"
+    )
+    html += f'<div class="pipe-center">{down}</div>'
+    html += f'<div class="pipe-center">{box("log1p 변환", "3개 값 모두 log(1+x)")}</div>'
+    html += f'<div class="pipe-center">{down}</div>'
+    html += f'<div class="pipe-center">{box("RandomForest", "의사결정나무 300개 평균", cls="pipe-forest")}</div>'
+    html += f'<div class="pipe-center">{down}</div>'
+    html += f'<div class="pipe-center">{box("expm1 역변환", "로그 → tCO2eq 단위 복원")}</div>'
+    html += f'<div class="pipe-center">{down}</div>'
+    html += f'<div class="pipe-center">{box("회귀모델 추정치", f"{model_estimate:,.0f} tCO2eq", cls="pipe-final")}</div>'
+    html += "</div>"
+    return html
+
+
 # ── 전역 스타일 ──────────────────────────────────────────────────────────────
 st.markdown(
     f"""
@@ -272,6 +310,32 @@ st.markdown(
         }}
 
         [data-testid="stMetricValue"] {{ font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }}
+
+        .pipe-wrap {{ padding: 0.4rem 0 0.2rem 0; }}
+        .pipe-row {{ display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; justify-content: center; }}
+        .pipe-center {{ display: flex; justify-content: center; }}
+        .pipe-box {{
+            background: {SURFACE2}; border: 1px solid {LINE}; border-radius: 8px;
+            padding: 10px 16px; text-align: center; min-width: 130px;
+        }}
+        .pipe-box .pb-label {{
+            font-size: 0.66rem; color: {MUT}; text-transform: uppercase; letter-spacing: 0.04em;
+            font-family: "JetBrains Mono", monospace;
+        }}
+        .pipe-box .pb-value {{
+            font-size: 0.82rem; color: {INK}; font-weight: 700; margin-top: 4px;
+            font-family: "JetBrains Mono", monospace;
+        }}
+        .pipe-box.pipe-eeio {{ border-color: {ORANGE}; background: rgba(217,89,38,0.08); }}
+        .pipe-box.pipe-forest {{ border-color: {INK2}; min-width: 220px; }}
+        .pipe-box.pipe-final {{ border-color: {BLUE}; background: rgba(57,135,229,0.1); min-width: 220px; }}
+        .pipe-box.pipe-final .pb-value {{ font-size: 1rem; color: {BLUE}; }}
+        .pipe-arrow {{ display: flex; align-items: center; color: {MUT}; font-size: 1.1rem; }}
+        .pipe-down {{ color: {MUT}; font-size: 1.1rem; text-align: center; padding: 2px 0; }}
+        .pipe-note {{
+            text-align: center; font-size: 0.68rem; color: {MUT}; margin: 6px 0 2px 0; line-height: 1.4;
+        }}
+        @media (max-width: 700px) {{ .pipe-row {{ flex-direction: column; align-items: center; }} .pipe-arrow {{ transform: rotate(90deg); }} }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -462,10 +526,32 @@ with st.container(border=True):
 
 st.write("")
 
-# ── 2) 편차율 게이지 ───────────────────────────────────────────────────────────
+# ── 2) 회귀모델 내부 계산 파이프라인 ──────────────────────────────────────────
 with st.container(border=True):
     st.markdown(
-        '<div class="card-head"><div class="num">2</div><h5>편차율이 30% 기준선 안에 들어오는지 측정합니다</h5></div>',
+        '<div class="card-head"><div class="num">2</div><h5>회귀모델은 내부적으로 이렇게 계산합니다</h5></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="viz-desc">매출액·매출원가·업종추정치(EEIO) 세 값을 로그로 변환해 RandomForest 300개 나무에 넣고, 평균을 다시 원래 단위로 되돌립니다.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_pipeline(
+            result.financials.get("매출액", 0) or 0,
+            result.financials.get("매출원가") or (result.financials.get("매출액", 0) or 0) * 0.7,
+            result.benchmark_estimate,
+            result.model_estimate,
+        ),
+        unsafe_allow_html=True,
+    )
+
+st.write("")
+
+# ── 3) 편차율 게이지 ───────────────────────────────────────────────────────────
+with st.container(border=True):
+    st.markdown(
+        '<div class="card-head"><div class="num">3</div><h5>편차율이 30% 기준선 안에 들어오는지 측정합니다</h5></div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -482,7 +568,7 @@ st.write("")
 # ── 3) Scope 3 = Scope1+2 × 3 (도넛) ──────────────────────────────────────────
 with st.container(border=True):
     st.markdown(
-        '<div class="card-head"><div class="num">3</div><h5>Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5></div>',
+        '<div class="card-head"><div class="num">4</div><h5>Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5></div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -499,7 +585,7 @@ st.write("")
 # ── 4) 규모 이상치 경고 (불릿 차트) ────────────────────────────────────────────
 with st.container(border=True):
     st.markdown(
-        '<div class="card-head"><div class="num">4</div><h5>매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5></div>',
+        '<div class="card-head"><div class="num">5</div><h5>매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5></div>',
         unsafe_allow_html=True,
     )
     st.markdown(
