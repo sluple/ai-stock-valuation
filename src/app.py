@@ -76,7 +76,13 @@ st.markdown(
         h1, h2, h3, h4 {{ font-weight: 800 !important; letter-spacing: -0.015em; color: {INK}; }}
 
         div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 10px; background: {SURFACE}; }}
-        div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 12px !important; border-color: {LINE} !important; }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            border-radius: 12px !important; border-color: {LINE} !important; background: {SURFACE};
+        }}
+
+        /* Streamlit 기본 경고/정보 박스는 브라우저 다크모드 감지에 따라 내부 글자색이
+           배경색과 거의 같아져 안 보이는 사고가 난다 — 명시적으로 짙은 글자색을 강제한다. */
+        div[data-testid="stAlert"] * {{ color: {INK} !important; }}
 
         .stButton > button[kind="primary"] {{
             background: {INK} !important; color: #fff !important; border: none !important;
@@ -107,9 +113,8 @@ st.markdown(
         .comp-card .de {{ font-size: 0.68rem; color: {MUT}; margin-top: 2px; line-height: 1.3; }}
         @media (max-width: 900px) {{ .comp-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
 
-        .viz-card {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px; padding: 1.1rem 1.2rem 0.9rem; margin-bottom: 0.7rem; }}
-        .viz-card h5 {{ margin: 0 0 0.15rem 0; font-size: 0.98rem; font-weight: 800; color: {INK}; }}
-        .viz-card .viz-desc {{ font-size: 0.8rem; color: {INK2}; margin-bottom: 0.6rem; }}
+        h5 {{ margin: 0 0 0.15rem 0; font-size: 0.98rem; font-weight: 800; color: {INK} !important; }}
+        .viz-desc {{ font-size: 0.8rem; color: {INK2}; margin-bottom: 0.6rem; }}
 
         .badge {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 100px; }}
         .badge-good {{ background: {GOOD_TINT}; color: #0a7a0a; }}
@@ -338,8 +343,7 @@ for w in result.warnings:
     st.warning(w)
 
 # ── 1) 실측값·회귀모델·업종평균 세 수치 비교 ──────────────────────────────────
-with st.container():
-    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+with st.container(border=True):
     st.markdown("<h5>① 세 가지 방법으로 Scope 1+2를 각각 추정해 비교합니다</h5>", unsafe_allow_html=True)
     st.markdown(
         '<div class="viz-desc">실측값(있는 경우)·회귀모델·업종평균을 같은 선 위에 놓고, 서로 얼마나 가까운지로 신뢰도를 판단합니다.</div>',
@@ -358,33 +362,33 @@ with st.container():
     badge_cls = "badge-good" if result.is_typical_pattern else "badge-warn"
     badge_txt = "업종 내 전형적인 배출 패턴" if result.is_typical_pattern else "방법론 간 편차가 큼"
     st.markdown(f'<span class="badge {badge_cls}">{badge_txt}</span>', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+
+st.write("")
 
 # ── 2) 편차율 30% 기준선 ──────────────────────────────────────────────────────
-with st.container():
-    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+with st.container(border=True):
     st.markdown("<h5>② 편차율이 30% 기준선 안에 들어오는지 측정합니다</h5>", unsafe_allow_html=True)
     st.markdown(
         '<div class="viz-desc">(최댓값 − 최솟값) ÷ 최솟값. 30% 이내면 "전형적 배출 패턴"으로 판정합니다.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(svg_divergence_meter(result.estimate_divergence_ratio), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+
+st.write("")
 
 # ── 3) Scope 3 = Scope1+2 × 3 ─────────────────────────────────────────────────
-with st.container():
-    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+with st.container(border=True):
     st.markdown("<h5>③ Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5>", unsafe_allow_html=True)
     st.markdown(
         '<div class="viz-desc">CDP 조사: Scope 3가 전체 배출량(1+2+3)의 평균 약 75%를 차지 → Scope 3 ≈ Scope 1+2 × 3</div>',
         unsafe_allow_html=True,
     )
     st.markdown(svg_scope3_multiplier(scope12_display, result.scope3_estimate), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+
+st.write("")
 
 # ── 4) 규모 이상치 경고 (매출 5배 기준) ───────────────────────────────────────
-with st.container():
-    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+with st.container(border=True):
     st.markdown("<h5>④ 매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5>", unsafe_allow_html=True)
     st.markdown(
         '<div class="viz-desc">넘으면 복합기업·지주회사일 가능성이 높아 추정 신뢰도가 낮아질 수 있다는 경고를 띄웁니다.</div>',
@@ -396,7 +400,8 @@ with st.container():
         svg_scale_strip(revenue, median_revenue, result.scale_ratio, result.scale_warning),
         unsafe_allow_html=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
+
+st.write("")
 
 # ── AI 리포트 / 분석 이력 ──────────────────────────────────────────────────────
 tab1, tab2 = st.tabs(["Claude API 리포트", "Supabase 분석 이력"])
