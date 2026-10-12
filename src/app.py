@@ -77,48 +77,95 @@ st.markdown(
 
         div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 10px; background: {SURFACE}; }}
         div[data-testid="stVerticalBlockBorderWrapper"] {{
-            border-radius: 12px !important; border-color: {LINE} !important; background: {SURFACE};
+            border-radius: 14px !important; border-color: {LINE} !important; background: {SURFACE};
+            box-shadow: 0 1px 2px rgba(11,11,11,0.04), 0 4px 14px rgba(11,11,11,0.035);
         }}
 
-        /* Streamlit 기본 경고/정보 박스는 브라우저 다크모드 감지에 따라 내부 글자색이
-           배경색과 거의 같아져 안 보이는 사고가 난다 — 명시적으로 짙은 글자색을 강제한다. */
+        /* Streamlit 기본 경고/정보 박스 + 일반 마크다운 텍스트(AI 리포트 등)는 브라우저
+           다크모드 감지에 따라 내부 글자색이 배경과 거의 같아져 안 보이는 사고가 난다 —
+           명시적으로 짙은 글자색을 강제한다. */
         div[data-testid="stAlert"] * {{ color: {INK} !important; }}
+        .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
+        .stMarkdown strong, .stMarkdown em, .stMarkdown h1, .stMarkdown h2,
+        .stMarkdown h3, .stMarkdown h4 {{ color: {INK} !important; }}
 
         .stButton > button[kind="primary"] {{
             background: {INK} !important; color: #fff !important; border: none !important;
             font-weight: 700 !important; border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(11,11,11,0.15), 0 2px 8px rgba(11,11,11,0.12);
+            transition: transform 0.08s ease, background 0.15s ease;
         }}
-        .stButton > button[kind="primary"]:hover {{ background: #2a2a28 !important; }}
-        .stButton > button[kind="primary"]:disabled {{ background: {LINE} !important; color: {MUT} !important; }}
+        .stButton > button[kind="primary"]:hover {{ background: #2a2a28 !important; transform: translateY(-1px); }}
+        .stButton > button[kind="primary"]:active {{ transform: translateY(0); }}
+        .stButton > button[kind="primary"]:disabled {{ background: {LINE} !important; color: {MUT} !important; box-shadow: none; }}
 
-        .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid {LINE}; }}
-        .stTabs [data-baseweb="tab"] {{ font-weight: 700; color: {MUT}; }}
-        .stTabs [aria-selected="true"] {{ color: {INK} !important; }}
+        div[data-testid="stTextInput"] input {{
+            border-radius: 9px !important; border-color: {LINE} !important;
+        }}
+        div[data-testid="stTextInput"] input:focus {{
+            border-color: {BLUE} !important; box-shadow: 0 0 0 3px rgba(42,120,214,0.14) !important;
+        }}
 
-        .page-title {{ font-size: 1.5rem; font-weight: 800; color: {INK}; margin-bottom: 0.1rem; }}
-        .page-sub {{ color: {INK2}; font-size: 0.92rem; margin-bottom: 1rem; }}
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 4px; background: {LINE}22; padding: 4px; border-radius: 11px; border-bottom: none;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            font-weight: 700; color: {MUT}; border-radius: 8px !important; padding: 6px 14px !important;
+        }}
+        .stTabs [aria-selected="true"] {{
+            color: {INK} !important; background: {SURFACE} !important;
+            box-shadow: 0 1px 3px rgba(11,11,11,0.1);
+        }}
+        .stTabs [data-baseweb="tab-highlight"] {{ display: none; }}
+
+        .top-header {{
+            display: flex; align-items: center; gap: 10px; padding: 0.15rem 0 1rem 0;
+            border-bottom: 1px solid {LINE}; margin-bottom: 1.1rem;
+        }}
+        .top-header .mark {{
+            width: 34px; height: 34px; border-radius: 9px; background: {INK};
+            display: flex; align-items: center; justify-content: center; font-size: 1.05rem; flex-shrink: 0;
+        }}
+        .page-title {{ font-size: 1.32rem; font-weight: 800; color: {INK}; line-height: 1.15; }}
+        .page-sub {{ color: {INK2}; font-size: 0.86rem; margin-top: 1px; }}
 
         .sec-label {{
-            display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 800;
-            letter-spacing: 0.04em; color: {MUT}; text-transform: uppercase; margin: 1.1rem 0 0.5rem 0;
+            display: flex; align-items: center; gap: 8px; font-size: 0.72rem; font-weight: 800;
+            letter-spacing: 0.05em; color: {MUT}; text-transform: uppercase; margin: 1.3rem 0 0.6rem 0;
         }}
-        .sec-label i {{ width: 5px; height: 5px; border-radius: 50%; background: {BLUE}; display: inline-block; }}
+        .sec-label i {{ width: 5px; height: 5px; border-radius: 50%; background: {BLUE}; display: inline-block; flex-shrink: 0; }}
+        .sec-label::after {{ content: ""; flex: 1; height: 1px; background: {LINE}; }}
 
-        .comp-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 0.3rem; }}
+        .comp-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; margin-bottom: 0.3rem; }}
         .comp-card {{
-            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; padding: 10px 11px;
+            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 11px; padding: 11px 12px;
+            box-shadow: 0 1px 2px rgba(11,11,11,0.03); transition: box-shadow 0.15s ease, border-color 0.15s ease;
         }}
-        .comp-card .ic {{ font-size: 1.1rem; }}
-        .comp-card .ti {{ font-weight: 700; font-size: 0.78rem; color: {INK}; margin-top: 3px; line-height: 1.25; }}
-        .comp-card .de {{ font-size: 0.68rem; color: {MUT}; margin-top: 2px; line-height: 1.3; }}
+        .comp-card:hover {{ border-color: {BLUE}55; box-shadow: 0 3px 10px rgba(11,11,11,0.07); }}
+        .comp-card .ic {{ font-size: 1.15rem; }}
+        .comp-card .ti {{ font-weight: 700; font-size: 0.78rem; color: {INK}; margin-top: 4px; line-height: 1.25; }}
+        .comp-card .de {{ font-size: 0.68rem; color: {MUT}; margin-top: 3px; line-height: 1.35; }}
         @media (max-width: 900px) {{ .comp-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
 
-        h5 {{ margin: 0 0 0.15rem 0; font-size: 0.98rem; font-weight: 800; color: {INK} !important; }}
-        .viz-desc {{ font-size: 0.8rem; color: {INK2}; margin-bottom: 0.6rem; }}
+        .card-head {{ display: flex; align-items: center; gap: 10px; margin-bottom: 0.15rem; }}
+        .card-head .num {{
+            width: 24px; height: 24px; border-radius: 7px; background: {INK}; color: #fff;
+            font-size: 0.74rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }}
+        h5 {{ margin: 0; font-size: 0.98rem; font-weight: 800; color: {INK} !important; }}
+        .viz-desc {{ font-size: 0.8rem; color: {INK2}; margin: 0.3rem 0 0.7rem 34px; }}
 
-        .badge {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 100px; }}
+        .badge {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.8rem; padding: 0.32rem 0.8rem; border-radius: 100px; }}
         .badge-good {{ background: {GOOD_TINT}; color: #0a7a0a; }}
         .badge-warn {{ background: {WARNING_TINT}; color: #8a6200; }}
+
+        .report-head {{ display: flex; align-items: center; gap: 8px; margin-bottom: 0.7rem; }}
+        .report-head .dot {{
+            width: 8px; height: 8px; border-radius: 50%; background: {GOOD};
+            box-shadow: 0 0 0 3px {GOOD_TINT};
+        }}
+        .report-head span {{ font-size: 0.78rem; font-weight: 700; color: {MUT}; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -239,8 +286,18 @@ def svg_scale_strip(revenue, median_revenue, ratio, scale_warning, width=660, he
 
 
 # ── 상단 바 ──────────────────────────────────────────────────────────────────
-st.markdown('<div class="page-title">AI 탄소배출량 추정기</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-sub">재무데이터로 Scope 1·2·3을 추정하고, 추정 과정 자체를 그대로 보여줍니다.</div>', unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="top-header">
+        <div class="mark">🌍</div>
+        <div>
+            <div class="page-title">AI 탄소배출량 추정기</div>
+            <div class="page-sub">재무데이터로 Scope 1·2·3을 추정하고, 추정 과정 자체를 그대로 보여줍니다.</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if "sb_client" not in st.session_state:
     st.session_state.sb_client = db.create_client()
@@ -344,7 +401,10 @@ for w in result.warnings:
 
 # ── 1) 실측값·회귀모델·업종평균 세 수치 비교 ──────────────────────────────────
 with st.container(border=True):
-    st.markdown("<h5>① 세 가지 방법으로 Scope 1+2를 각각 추정해 비교합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-head"><div class="num">1</div><h5>세 가지 방법으로 Scope 1+2를 각각 추정해 비교합니다</h5></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="viz-desc">실측값(있는 경우)·회귀모델·업종평균을 같은 선 위에 놓고, 서로 얼마나 가까운지로 신뢰도를 판단합니다.</div>',
         unsafe_allow_html=True,
@@ -367,7 +427,10 @@ st.write("")
 
 # ── 2) 편차율 30% 기준선 ──────────────────────────────────────────────────────
 with st.container(border=True):
-    st.markdown("<h5>② 편차율이 30% 기준선 안에 들어오는지 측정합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-head"><div class="num">2</div><h5>편차율이 30% 기준선 안에 들어오는지 측정합니다</h5></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="viz-desc">(최댓값 − 최솟값) ÷ 최솟값. 30% 이내면 "전형적 배출 패턴"으로 판정합니다.</div>',
         unsafe_allow_html=True,
@@ -378,7 +441,10 @@ st.write("")
 
 # ── 3) Scope 3 = Scope1+2 × 3 ─────────────────────────────────────────────────
 with st.container(border=True):
-    st.markdown("<h5>③ Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-head"><div class="num">3</div><h5>Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="viz-desc">CDP 조사: Scope 3가 전체 배출량(1+2+3)의 평균 약 75%를 차지 → Scope 3 ≈ Scope 1+2 × 3</div>',
         unsafe_allow_html=True,
@@ -389,7 +455,10 @@ st.write("")
 
 # ── 4) 규모 이상치 경고 (매출 5배 기준) ───────────────────────────────────────
 with st.container(border=True):
-    st.markdown("<h5>④ 매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-head"><div class="num">4</div><h5>매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5></div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="viz-desc">넘으면 복합기업·지주회사일 가능성이 높아 추정 신뢰도가 낮아질 수 있다는 경고를 띄웁니다.</div>',
         unsafe_allow_html=True,
@@ -422,6 +491,10 @@ with tab1:
                 st.error(f"리포트 생성에 실패했어요: {e}")
     if st.session_state.get("report_text"):
         with st.container(border=True):
+            st.markdown(
+                '<div class="report-head"><div class="dot"></div><span>Claude가 생성한 리포트</span></div>',
+                unsafe_allow_html=True,
+            )
             st.markdown(st.session_state.report_text)
 
 with tab2:
