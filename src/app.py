@@ -281,12 +281,10 @@ st.markdown(
 st.markdown(
     """
     <div class="top-header">
-        <div class="mark">🌍</div>
         <div>
             <div class="page-title">AI 탄소배출량 추정기</div>
             <div class="page-sub">재무데이터로 Scope 1·2·3을 추정하고, 추정 과정 자체를 그대로 보여줍니다.</div>
         </div>
-        <div class="live-dot"><i></i>LIVE</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -333,7 +331,7 @@ with st.container(border=True):
     with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)"):
         industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
 
-with st.expander("📜 지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
+with st.expander("지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
     if not db.is_enabled():
         st.info("기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 켜져요.")
     else:
