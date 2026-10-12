@@ -241,6 +241,11 @@ if "sb_client" not in st.session_state:
     st.session_state.sb_client = db.create_client()
 sb = st.session_state.sb_client
 
+if "corp_cache_warm" not in st.session_state:
+    with st.spinner("기업 목록을 불러오는 중이에요 (최초 1회, 몇 초 걸려요)..."):
+        fetch_dart.warm_up_corp_cache()
+    st.session_state.corp_cache_warm = True
+
 try:
     industries = analysis.list_known_industries()
 except FileNotFoundError:

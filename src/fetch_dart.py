@@ -68,6 +68,12 @@ def _load_all_corps() -> list[dict]:
     return corps
 
 
+def warm_up_corp_cache() -> None:
+    """기업 목록 캐시를 미리 로드해둔다 (검색창에 첫 입력이 들어오기 전에 호출해,
+    화면이 멈춘 것처럼 보이지 않고 로딩 스피너로 보이게 하려는 목적)."""
+    _load_all_corps()
+
+
 def find_corp_code(name_or_stock_code: str) -> list[dict]:
     """기업명 또는 종목코드로 corp_code를 정확히 일치하는 것만 검색한다."""
     matches = []
