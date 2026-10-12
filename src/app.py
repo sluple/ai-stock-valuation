@@ -1,9 +1,10 @@
 """AI 탄소배출량(Scope 1/2/3) 추정 대시보드 (Streamlit).
 
+"보고서에 적힌 것만, 전부 시각적으로" 컨셉 — 시스템 구성 10개 항목과 이중 추정
+구조/신뢰도 장치 4개 항목을 각각 전용 시각 컴포넌트로 보여준다.
+
 실행: streamlit run app.py
 """
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 import analysis
@@ -13,31 +14,33 @@ from llm_report import generate_report
 
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="🌍", layout="wide")
 
-# ── 색상 팔레트: "환경 리포트" 컨셉 — 크림 배경 + 짙은 파인그린 + 테라코타 포인트 ──
-# 기본 배경/글자색은 .streamlit/config.toml의 테마로 통일한다 — CSS로 개별 위젯을
-# 덮어쓰면 다크모드 브라우저에서 위젯 내부 기본 글자색과 충돌해 안 보이는 사고가 난다.
-BG = "#F7F3EA"
-SURFACE = "#FFFFFF"
-INK = "#1B2B22"
-MUT = "#6B7566"
-LINE = "#E3DFD2"
-PRIMARY = "#16362A"      # 짙은 파인그린 — 헤더/보조 버튼
-ACCENT = "#E1672B"       # 테라코타 — 메인 액션/포인트
-ACCENT_SOFT = "#F3E1D3"  # 테라코타 톤 배경
-MOSS = "#4F7942"         # 모스그린 — 긍정 신호
+# ── 팔레트: dataviz 스킬 검증 팔레트(카테고리컬 slot1=blue/slot2=orange, 상태색) ──
+SURFACE = "#fcfcfb"
+PAGE = "#f9f9f7"
+INK = "#0b0b0b"
+INK2 = "#52514e"
+MUT = "#898781"
+LINE = "#e1e0d9"
+BASELINE = "#c3c2b7"
+BLUE = "#2a78d6"      # 카테고리컬 slot 1 — 회귀모델
+ORANGE = "#eb6834"    # 카테고리컬 slot 2 — 업종평균
+GOOD = "#0ca30c"
+WARNING = "#fab219"
+SERIOUS = "#ec835a"
+GOOD_TINT = "rgba(12,163,12,0.12)"
+WARNING_TINT = "rgba(250,178,25,0.18)"
 
-COLOR_ACTUAL = PRIMARY       # 실제 공시값 (가장 신뢰도 높음 — 짙은 그린)
-COLOR_MODEL = "#3E7CB1"      # 회귀모델 추정치 (스틸블루)
-COLOR_BENCHMARK = ACCENT     # 업종평균 추정치 (테라코타)
-COLOR_SCOPE3 = "#A79C87"     # Scope 3 (중립 타우프)
-
-GLOSSARY = [
-    ("Scope 1", "회사가 직접 태워서 나오는 배출 (공장 보일러, 회사 차량 연료 등)."),
-    ("Scope 2", "회사가 전기를 사서 쓰는 데서 간접적으로 나오는 배출."),
-    ("Scope 3", "협력사·물류·제품 사용 등 회사 울타리 밖 공급망 전체에서 나오는 배출. 측정이 어려워 대부분 기업이 공시를 안 함."),
-    ("tCO2eq", "이산화탄소로 환산한 온실가스 배출량 단위 (톤)."),
-    ("배출집약도", "매출 1억원당 배출되는 온실가스 양. 업종마다 크게 다름 (철강·시멘트는 높고 서비스업은 낮음)."),
-    ("EEIO(환경투입산출모델)", "매출·구매비용 같은 경제 활동 데이터로 온실가스 배출량을 추정하는 방법론. 미국 EPA 등이 실제로 쓰는 방식."),
+SYSTEM_COMPONENTS = [
+    ("🖥", "Streamlit 웹 대시보드", "Plotly 차트 렌더링 + 회사명 검색·결과 화면 단일 페이지"),
+    ("🔎", "회사명 검색 플로우", "코드가 아닌 이름으로 검색 → 결과 화면까지 한 흐름"),
+    ("🐍", "분석 파이프라인", "재무데이터 조회 / 추정 모델 / 분석 오케스트레이션 모듈"),
+    ("📄", "DART 재무제표 조회", "전자공시시스템에서 매출액·매출원가 실시간 조회"),
+    ("🌲", "RandomForestRegressor", "scikit-learn, 타겟 인코딩 방식으로 업종을 압축"),
+    ("📊", "EEIO 업종평균 벤치마크", "업종별 배출집약도 중앙값 계산"),
+    ("💾", "모델 파일 직렬화", "학습된 모델을 pickle로 저장, 배포 서버가 즉시 로드"),
+    ("🗄", "Supabase(PostgreSQL)", "모든 분석 이력 저장"),
+    ("🏭", "K-ETS 실측 데이터 대조", "온실가스종합정보센터 공시 배출량과 자동 매칭"),
+    ("✨", "Claude API 리포트 생성", "비전문가용 자연어 설명 리포트 자동 생성"),
 ]
 
 
@@ -45,17 +48,17 @@ def fmt_ton(x: float | None) -> str:
     return f"{x:,.0f} tCO2eq" if x is not None else "정보 없음"
 
 
+def fmt_won(x: float | None) -> str:
+    return f"{x:,.0f}원" if x is not None else "정보 없음"
+
+
 # ── 전역 스타일 ──────────────────────────────────────────────────────────────
 st.markdown(
     f"""
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700;8..60,800&display=swap" rel="stylesheet">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
     <style>
-        /* Streamlit 기본 크롬(햄버거 메뉴·사이드바 화살표·푸터·배포 버튼) 숨기기 */
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
         header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
@@ -65,86 +68,174 @@ st.markdown(
         #stDecoration {{ display: none; }}
 
         html, body, [class*="css"] {{
-            font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+            font-family: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", system-ui, sans-serif;
         }}
-        .stApp {{ background: {BG}; }}
-        .block-container {{ padding-top: 1.6rem; max-width: 1180px; }}
+        .stApp {{ background: {PAGE}; }}
+        .block-container {{ padding-top: 1.4rem; max-width: 1120px; }}
 
-        h1, h2, h3, h4 {{
-            font-family: "Source Serif 4", "Pretendard Variable", serif !important;
-            font-weight: 700 !important; letter-spacing: -0.01em; color: {INK};
-        }}
+        h1, h2, h3, h4 {{ font-weight: 800 !important; letter-spacing: -0.015em; color: {INK}; }}
 
-        [data-testid="stMetric"] {{
-            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 14px; padding: 0.9rem 1.05rem;
-        }}
-        [data-testid="stMetricLabel"] {{
-            font-weight: 700; font-size: 0.74rem; letter-spacing: 0.03em; text-transform: uppercase; color: {MUT};
-        }}
-        [data-testid="stMetricValue"] {{ font-weight: 800; letter-spacing: -0.02em; color: {INK}; }}
-
-        div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 12px; background: {SURFACE}; }}
-        div[data-testid="stExpander"] details summary {{ font-weight: 700; }}
-        div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 16px !important; }}
+        div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 10px; background: {SURFACE}; }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 12px !important; border-color: {LINE} !important; }}
 
         .stButton > button[kind="primary"] {{
-            background: {ACCENT} !important; color: #fff !important; border: none !important;
-            font-weight: 700 !important; border-radius: 10px !important; letter-spacing: -0.01em;
+            background: {INK} !important; color: #fff !important; border: none !important;
+            font-weight: 700 !important; border-radius: 8px !important;
         }}
-        .stButton > button[kind="primary"]:hover {{ background: #C4551F !important; }}
+        .stButton > button[kind="primary"]:hover {{ background: #2a2a28 !important; }}
         .stButton > button[kind="primary"]:disabled {{ background: {LINE} !important; color: {MUT} !important; }}
 
         .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid {LINE}; }}
-        .stTabs [data-baseweb="tab"] {{
-            font-weight: 700; color: {MUT}; border-radius: 10px 10px 0 0; padding: 0.5rem 1rem;
-        }}
-        .stTabs [aria-selected="true"] {{ color: {INK} !important; background: {ACCENT_SOFT}; }}
+        .stTabs [data-baseweb="tab"] {{ font-weight: 700; color: {MUT}; }}
+        .stTabs [aria-selected="true"] {{ color: {INK} !important; }}
 
-        /* 상단 브랜드 바: 예전의 큰 다크 히어로 대신 얇은 파인그린 스트립 */
-        .topbar {{
-            background: {PRIMARY}; padding: 1.1rem 1.6rem; border-radius: 16px; margin-bottom: 1rem;
-            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem;
-        }}
-        .topbar__brand {{ display: flex; flex-direction: column; }}
-        .topbar__kicker {{
-            color: {ACCENT}; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-        }}
-        .topbar__title {{
-            color: #fff; font-family: "Source Serif 4", serif; font-weight: 700;
-            font-size: 1.35rem; letter-spacing: -0.01em; margin-top: 0.15rem;
-        }}
+        .page-title {{ font-size: 1.5rem; font-weight: 800; color: {INK}; margin-bottom: 0.1rem; }}
+        .page-sub {{ color: {INK2}; font-size: 0.92rem; margin-bottom: 1rem; }}
 
-        .panel-tag {{
-            display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 700;
-            letter-spacing: 0.04em; color: {MUT}; text-transform: uppercase; margin-bottom: 0.4rem;
+        .sec-label {{
+            display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 800;
+            letter-spacing: 0.04em; color: {MUT}; text-transform: uppercase; margin: 1.1rem 0 0.5rem 0;
         }}
-        .panel-tag i {{ width: 5px; height: 5px; border-radius: 50%; background: {ACCENT}; display: inline-block; }}
+        .sec-label i {{ width: 5px; height: 5px; border-radius: 50%; background: {BLUE}; display: inline-block; }}
 
-        .badge-typical {{
-            display: inline-block; background: {MOSS}; color: #fff; font-weight: 700; font-size: 0.76rem;
-            padding: 0.25rem 0.7rem; border-radius: 100px; margin-bottom: 0.4rem;
+        .comp-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 0.3rem; }}
+        .comp-card {{
+            background: {SURFACE}; border: 1px solid {LINE}; border-radius: 10px; padding: 10px 11px;
         }}
-        .badge-atypical {{
-            display: inline-block; background: {ACCENT_SOFT}; color: {ACCENT}; font-weight: 700; font-size: 0.76rem;
-            padding: 0.25rem 0.7rem; border-radius: 100px; margin-bottom: 0.4rem;
-        }}
+        .comp-card .ic {{ font-size: 1.1rem; }}
+        .comp-card .ti {{ font-weight: 700; font-size: 0.78rem; color: {INK}; margin-top: 3px; line-height: 1.25; }}
+        .comp-card .de {{ font-size: 0.68rem; color: {MUT}; margin-top: 2px; line-height: 1.3; }}
+        @media (max-width: 900px) {{ .comp-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+
+        .viz-card {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px; padding: 1.1rem 1.2rem 0.9rem; margin-bottom: 0.7rem; }}
+        .viz-card h5 {{ margin: 0 0 0.15rem 0; font-size: 0.98rem; font-weight: 800; color: {INK}; }}
+        .viz-card .viz-desc {{ font-size: 0.8rem; color: {INK2}; margin-bottom: 0.6rem; }}
+
+        .badge {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 100px; }}
+        .badge-good {{ background: {GOOD_TINT}; color: #0a7a0a; }}
+        .badge-warn {{ background: {WARNING_TINT}; color: #8a6200; }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ── 상단 브랜드 바 ────────────────────────────────────────────────────────────
-st.markdown(
+
+def svg_number_line(points, highlight=None, width=660, height=96, value_fmt=None, unit=""):
+    """points: [{label, value, color}], highlight: (lo, hi, color_tint) or None."""
+    value_fmt = value_fmt or (lambda v: f"{v:,.0f}")
+    vals = [p["value"] for p in points]
+    vmax = max(vals) * 1.15 if max(vals) > 0 else 1.0
+    vmin = 0
+    ml, mr = 20, 20
+    plot_w = width - ml - mr
+    base_y = height - 34
+
+    def x(v):
+        return ml + (v - vmin) / (vmax - vmin) * plot_w
+
+    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" xmlns="http://www.w3.org/2000/svg">']
+    if highlight:
+        lo, hi, tint = highlight
+        parts.append(
+            f'<rect x="{x(lo):.1f}" y="{base_y - 16}" width="{(x(hi) - x(lo)):.1f}" height="32" rx="6" fill="{tint}"/>'
+        )
+    parts.append(f'<line x1="{ml}" y1="{base_y}" x2="{width - mr}" y2="{base_y}" stroke="{BASELINE}" stroke-width="2"/>')
+
+    sorted_pts = sorted(points, key=lambda p: p["value"])
+    for i, p in enumerate(sorted_pts):
+        cx = x(p["value"])
+        above = (i % 2 == 0)
+        ly = base_y - 20 if above else base_y + 34
+        parts.append(f'<circle cx="{cx:.1f}" cy="{base_y}" r="7" fill="{p["color"]}" stroke="{SURFACE}" stroke-width="2.5"/>')
+        label_text = f'{p["label"]} · {value_fmt(p["value"])}{unit}'
+        parts.append(
+            f'<text x="{cx:.1f}" y="{ly}" text-anchor="middle" font-size="11.5" font-weight="700" fill="{INK}">{label_text}</text>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def svg_divergence_meter(ratio, threshold=0.30, width=660, height=58):
+    cap = 1.5
+    display_ratio = min(ratio, cap)
+    track_w = width - 40
+    fill_color = GOOD if ratio <= threshold else WARNING
+    fill_w = max(6, display_ratio / cap * track_w)
+    thresh_x = 20 + threshold / cap * track_w
+    overflow = ratio > cap
+    label = f"{ratio * 100:,.0f}%" if not overflow else f"{ratio * 100:,.0f}% (그래프 범위 초과)"
+    return f"""
+    <svg viewBox="0 0 {width} {height}" width="100%" height="{height}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="20" y="22" width="{track_w}" height="14" rx="7" fill="{LINE}"/>
+      <rect x="20" y="22" width="{fill_w:.1f}" height="14" rx="7" fill="{fill_color}"/>
+      <line x1="{thresh_x:.1f}" y1="14" x2="{thresh_x:.1f}" y2="42" stroke="{INK2}" stroke-width="1.5" stroke-dasharray="3,2"/>
+      <text x="{thresh_x:.1f}" y="52" text-anchor="middle" font-size="10.5" fill="{MUT}" font-weight="700">30% 기준선</text>
+      <text x="20" y="12" font-size="13" font-weight="800" fill="{INK}">편차율 {label}</text>
+    </svg>
     """
-    <div class="topbar">
-        <div class="topbar__brand">
-            <span class="topbar__kicker">Scope 1 · 2 · 3 Estimator</span>
-            <span class="topbar__title">AI가 재무제표만 보고 탄소배출량을 추정합니다</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+
+
+def svg_scope3_multiplier(scope12, scope3, width=660, height=150):
+    ml = 20
+    unit_w = 150
+    unit_h = 46
+    gap = 2
+    y1 = 34
+    y2 = 104
+    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" xmlns="http://www.w3.org/2000/svg">']
+    parts.append(f'<rect x="{ml}" y="{y1}" width="{unit_w}" height="{unit_h}" rx="8" fill="{BLUE}"/>')
+    parts.append(f'<text x="{ml + unit_w / 2}" y="{y1 - 8}" text-anchor="middle" font-size="12" font-weight="800" fill="{INK}">Scope 1+2</text>')
+    parts.append(f'<text x="{ml + unit_w / 2}" y="{y1 + unit_h / 2 + 5}" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">{scope12:,.0f}</text>')
+
+    times_x = ml + unit_w + 26
+    parts.append(f'<text x="{times_x}" y="{(y1 + y2) / 2 + unit_h / 2 - 2}" text-anchor="middle" font-size="22" font-weight="800" fill="{MUT}">×3</text>')
+
+    bx = times_x + 26
+    for i in range(3):
+        seg_x = bx + i * (unit_w + gap)
+        parts.append(f'<rect x="{seg_x:.1f}" y="{y2}" width="{unit_w}" height="{unit_h}" rx="8" fill="{ORANGE}"/>')
+    total_w = unit_w * 3 + gap * 2
+    parts.append(f'<text x="{bx + total_w / 2:.1f}" y="{y2 - 8}" text-anchor="middle" font-size="12" font-weight="800" fill="{INK}">Scope 3 (추정)</text>')
+    parts.append(f'<text x="{bx + total_w / 2:.1f}" y="{y2 + unit_h / 2 + 5:.1f}" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">{scope3:,.0f}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def svg_scale_strip(revenue, median_revenue, ratio, scale_warning, width=660, height=96):
+    import math
+    ml, mr = 20, 20
+    plot_w = width - ml - mr
+    lo_log = math.log10(max(median_revenue, 1))
+    hi_log = math.log10(max(revenue, median_revenue * 5, 1)) + 0.25
+    lo_log = min(lo_log, hi_log - 0.5)
+
+    def x(v):
+        v = max(v, 1)
+        return ml + (math.log10(v) - lo_log) / (hi_log - lo_log) * plot_w
+
+    base_y = height - 34
+    warn_x = x(median_revenue * 5)
+    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" xmlns="http://www.w3.org/2000/svg">']
+    parts.append(f'<rect x="{warn_x:.1f}" y="{base_y - 16}" width="{max(0, width - mr - warn_x):.1f}" height="32" rx="6" fill="{WARNING_TINT}"/>')
+    parts.append(f'<line x1="{ml}" y1="{base_y}" x2="{width - mr}" y2="{base_y}" stroke="{BASELINE}" stroke-width="2"/>')
+    parts.append(f'<line x1="{warn_x:.1f}" y1="{base_y - 20}" x2="{warn_x:.1f}" y2="{base_y + 20}" stroke="{WARNING}" stroke-width="1.5" stroke-dasharray="3,2"/>')
+    parts.append(f'<text x="{warn_x:.1f}" y="{base_y + 34}" text-anchor="middle" font-size="10.5" fill="#8a6200" font-weight="700">5배 경고선</text>')
+
+    mx = x(median_revenue)
+    parts.append(f'<circle cx="{mx:.1f}" cy="{base_y}" r="7" fill="{MUT}" stroke="{SURFACE}" stroke-width="2.5"/>')
+    parts.append(f'<text x="{mx:.1f}" y="{base_y - 20}" text-anchor="middle" font-size="11" font-weight="700" fill="{INK}">업종 매출 중앙값</text>')
+
+    cx = x(revenue)
+    color = WARNING if scale_warning else GOOD
+    parts.append(f'<circle cx="{cx:.1f}" cy="{base_y}" r="7" fill="{color}" stroke="{SURFACE}" stroke-width="2.5"/>')
+    parts.append(f'<text x="{cx:.1f}" y="{base_y + 34 if cx - mx < 60 else base_y - 20}" text-anchor="middle" font-size="11" font-weight="700" fill="{INK}">이 기업 ({ratio:.1f}배)</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+# ── 상단 바 ──────────────────────────────────────────────────────────────────
+st.markdown('<div class="page-title">AI 탄소배출량 추정기</div>', unsafe_allow_html=True)
+st.markdown('<div class="page-sub">재무데이터로 Scope 1·2·3을 추정하고, 추정 과정 자체를 그대로 보여줍니다.</div>', unsafe_allow_html=True)
 
 if "sb_client" not in st.session_state:
     st.session_state.sb_client = db.create_client()
@@ -156,9 +247,7 @@ except FileNotFoundError:
     industries = []
     st.error("학습된 모델이 없습니다. `python build_emissions_dataset.py` 후 `python train_model.py`를 먼저 실행하세요.")
 
-# ── 검색·컨트롤 바: 하나의 가로형 카드로 통합 ─────────────────────────────────
 with st.container(border=True):
-    st.markdown('<div class="panel-tag"><i></i>회사 검색</div>', unsafe_allow_html=True)
     c1, c2 = st.columns([4, 1])
     with c1:
         company_query = st.text_input(
@@ -176,20 +265,21 @@ with st.container(border=True):
         )
         selected_corp = candidates[picked]
     elif company_query:
-        st.caption("검색 결과가 없어요. 정식 회사명을 입력해보세요.")
+        st.caption("검색 결과가 없어요.")
 
     with c2:
         run_button = st.button("분석 시작", type="primary", width="stretch", disabled=selected_corp is None)
 
-    exp_col1, exp_col2 = st.columns(2)
-    with exp_col1:
-        with st.expander("업종을 직접 선택하고 싶다면"):
-            st.caption("배출권거래제 공시 대상 기업은 자동 감지돼요.")
-            industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
-    with exp_col2:
-        with st.expander("어려운 용어가 있으면 여기를 눌러 확인하세요"):
-            for term, desc in GLOSSARY:
-                st.markdown(f"**{term}** — {desc}")
+    with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)"):
+        industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
+
+# ── 시스템 구성: 보고서의 10개 항목을 그대로 카드 그리드로 ────────────────────
+st.markdown('<div class="sec-label"><i></i>이 시스템은 이렇게 만들어졌습니다 — 시스템 구성</div>', unsafe_allow_html=True)
+cards_html = '<div class="comp-grid">'
+for icon, title, desc in SYSTEM_COMPONENTS:
+    cards_html += f'<div class="comp-card"><div class="ic">{icon}</div><div class="ti">{title}</div><div class="de">{desc}</div></div>'
+cards_html += "</div>"
+st.markdown(cards_html, unsafe_allow_html=True)
 
 if "result" not in st.session_state:
     st.session_state.result = None
@@ -232,168 +322,122 @@ if result is None:
 
 corp = result.corp
 scope12_display = result.actual_scope12 if result.actual_scope12 is not None else result.model_estimate
-scope12_label = "Scope 1+2 (실제 공시)" if result.actual_scope12 is not None else "Scope 1+2 (모델 추정)"
 
 st.write("")
-main_col, side_col = st.columns([2, 1], gap="medium")
+st.markdown(
+    f'<div class="sec-label"><i></i>{corp["corp_name"]} · {result.industry} · 매출 {fmt_won(result.financials.get("매출액"))}</div>',
+    unsafe_allow_html=True,
+)
 
-# ── 오른쪽 요약 패널: 핵심 지표 + 신뢰도 신호를 한곳에 모음 ────────────────────
-with side_col:
-    with st.container(border=True):
-        st.markdown('<div class="panel-tag"><i></i>핵심 지표</div>', unsafe_allow_html=True)
-        st.markdown(f"##### {corp['corp_name']}")
-        st.caption(f"{corp['stock_code'] or '비상장'}  ·  {result.industry}")
-        st.caption(result.industry_source)
-        st.divider()
-        st.metric("매출액", f"{result.financials.get('매출액', 0):,.0f}원")
-        st.metric(scope12_label, fmt_ton(scope12_display))
-        st.metric("Scope 3 (추정)", fmt_ton(result.scope3_estimate))
-        st.metric("총 배출량 추정", fmt_ton(scope12_display + result.scope3_estimate), help="Scope1+2 + Scope3 합계")
+for w in result.warnings:
+    st.warning(w)
 
-        st.write("")
-        if result.is_typical_pattern:
-            st.markdown('<span class="badge-typical">전형적 배출 패턴</span>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span class="badge-atypical">방법론 간 편차 큼</span>', unsafe_allow_html=True)
-        st.caption(f"방법론 간 편차율 {result.estimate_divergence_ratio * 100:.0f}%")
+# ── 1) 실측값·회귀모델·업종평균 세 수치 비교 ──────────────────────────────────
+with st.container():
+    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+    st.markdown("<h5>① 세 가지 방법으로 Scope 1+2를 각각 추정해 비교합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="viz-desc">실측값(있는 경우)·회귀모델·업종평균을 같은 선 위에 놓고, 서로 얼마나 가까운지로 신뢰도를 판단합니다.</div>',
+        unsafe_allow_html=True,
+    )
+    points = []
+    if result.actual_scope12 is not None:
+        points.append({"label": "실제 공시값", "value": result.actual_scope12, "color": INK})
+    points.append({"label": "회귀모델 추정", "value": result.model_estimate, "color": BLUE})
+    points.append({"label": "업종평균 추정", "value": result.benchmark_estimate, "color": ORANGE})
+    vals = [p["value"] for p in points]
+    lo, hi = min(vals), max(vals) * (1 + analysis.TYPICAL_PATTERN_THRESHOLD)
+    tint = GOOD_TINT if result.is_typical_pattern else WARNING_TINT
+    svg = svg_number_line(points, highlight=(min(vals), lo * (1 + analysis.TYPICAL_PATTERN_THRESHOLD), tint), value_fmt=lambda v: f"{v:,.0f}", unit=" t")
+    st.markdown(svg, unsafe_allow_html=True)
+    badge_cls = "badge-good" if result.is_typical_pattern else "badge-warn"
+    badge_txt = "업종 내 전형적인 배출 패턴" if result.is_typical_pattern else "방법론 간 편차가 큼"
+    st.markdown(f'<span class="badge {badge_cls}">{badge_txt}</span>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    if result.warnings:
-        st.write("")
-        with st.container(border=True):
-            st.markdown('<div class="panel-tag"><i></i>참고 사항</div>', unsafe_allow_html=True)
-            for w in result.warnings:
-                st.warning(w)
+# ── 2) 편차율 30% 기준선 ──────────────────────────────────────────────────────
+with st.container():
+    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+    st.markdown("<h5>② 편차율이 30% 기준선 안에 들어오는지 측정합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="viz-desc">(최댓값 − 최솟값) ÷ 최솟값. 30% 이내면 "전형적 배출 패턴"으로 판정합니다.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(svg_divergence_meter(result.estimate_divergence_ratio), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── 왼쪽 메인 패널: 탭으로 구성된 상세 분석 ───────────────────────────────────
-with main_col:
-    tab1, tab2, tab3, tab4 = st.tabs(["배출량 추정 결과", "모델 설명", "AI 리포트", "최근 분석 기록"])
+# ── 3) Scope 3 = Scope1+2 × 3 ─────────────────────────────────────────────────
+with st.container():
+    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+    st.markdown("<h5>③ Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="viz-desc">CDP 조사: Scope 3가 전체 배출량(1+2+3)의 평균 약 75%를 차지 → Scope 3 ≈ Scope 1+2 × 3</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(svg_scope3_multiplier(scope12_display, result.scope3_estimate), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    with tab1:
-        with st.container(border=True):
-            st.markdown("#### Scope 1+2 추정 방법 비교")
-            labels = []
-            values = []
-            colors = []
-            if result.actual_scope12 is not None:
-                labels.append("실제 공시값")
-                values.append(result.actual_scope12)
-                colors.append(COLOR_ACTUAL)
-            labels.append("회귀모델 추정")
-            values.append(result.model_estimate)
-            colors.append(COLOR_MODEL)
-            labels.append("업종평균 추정")
-            values.append(result.benchmark_estimate)
-            colors.append(COLOR_BENCHMARK)
+# ── 4) 규모 이상치 경고 (매출 5배 기준) ───────────────────────────────────────
+with st.container():
+    st.markdown('<div class="viz-card">', unsafe_allow_html=True)
+    st.markdown("<h5>④ 매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="viz-desc">넘으면 복합기업·지주회사일 가능성이 높아 추정 신뢰도가 낮아질 수 있다는 경고를 띄웁니다.</div>',
+        unsafe_allow_html=True,
+    )
+    revenue = result.financials.get("매출액", 0) or 0
+    median_revenue = revenue / result.scale_ratio if result.scale_ratio else revenue
+    st.markdown(
+        svg_scale_strip(revenue, median_revenue, result.scale_ratio, result.scale_warning),
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-            fig1 = go.Figure(
-                go.Bar(x=labels, y=values, marker_color=colors, text=[fmt_ton(v) for v in values], textposition="outside")
-            )
-            fig1.update_layout(
-                yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=340, showlegend=False,
-                plot_bgcolor=SURFACE, paper_bgcolor=SURFACE, font=dict(color=INK),
-            )
-            st.plotly_chart(fig1, width="stretch")
+# ── AI 리포트 / 분석 이력 ──────────────────────────────────────────────────────
+tab1, tab2 = st.tabs(["Claude API 리포트", "Supabase 분석 이력"])
 
-            if result.is_typical_pattern:
-                st.success(
-                    f"방법론 간 추정치가 서로 {result.estimate_divergence_ratio * 100:.0f}% 이내로 근접해요. "
-                    "이 회사는 업종 내에서 전형적인 배출 패턴을 보인다는 뜻이라, 추정치를 신뢰할 수 있는 편이에요."
-                )
-            else:
-                st.info(
-                    f"방법론 간 추정치 차이가 {result.estimate_divergence_ratio * 100:.0f}%로 커요. "
-                    "이 회사가 업종 평균과 다른 배출 특성(설비 효율, 사업 구성 등)을 가지고 있을 수 있으니 참고만 해주세요."
-                )
-
-        st.write("")
-        with st.container(border=True):
-            st.markdown("#### Scope 1+2 vs Scope 3 비교")
-            base = scope12_display
-            fig2 = go.Figure(
-                go.Bar(
-                    x=["Scope 1+2", "Scope 3 (추정)"],
-                    y=[base, result.scope3_estimate],
-                    marker_color=[COLOR_MODEL, COLOR_SCOPE3],
-                    text=[fmt_ton(base), fmt_ton(result.scope3_estimate)],
-                    textposition="outside",
-                )
-            )
-            fig2.update_layout(
-                yaxis_title="tCO2eq", margin=dict(t=30, b=20), height=340, showlegend=False,
-                plot_bgcolor=SURFACE, paper_bgcolor=SURFACE, font=dict(color=INK),
-            )
-            st.plotly_chart(fig2, width="stretch")
-            st.caption(
-                "Scope 3는 CDP(글로벌 ESG 공시기구) 조사에서 나온 '전산업 평균 Scope3 비중(약 75%)'을 적용한 값이에요. "
-                "즉 Scope1+2의 약 3배로 계산했고, 업종별 정교화는 아직 안 되어 있어요."
-            )
-
-    with tab2:
-        with st.container(border=True):
-            st.markdown("#### 모델 성능 (홀드아웃 검증)")
-            m = result.model_metrics
-            st.write(f"- R² (설명력): {m['r2']:.3f}")
-            st.write(f"- 학습 데이터: {m['n_train']}개 기업 / 검증 데이터: {m['n_test']}개 기업")
-            st.caption("R²는 1에 가까울수록 모델이 실제 배출량 패턴을 잘 설명한다는 뜻이에요.")
-
-        st.write("")
-        with st.container(border=True):
-            st.markdown("#### 방법론")
-            st.markdown(
-                "1. **회귀모델**: 매출액·매출원가·업종을 특징으로 RandomForest 모델이 배출량을 예측해요.\n"
-                "2. **업종평균(EEIO 방식)**: 같은 업종 기업들의 '배출량 ÷ 매출액' 중앙값을 이 회사 매출액에 곱해요.\n"
-                "3. 두 방법을 같이 보여주는 이유: 하나만 보면 그 추정치를 얼마나 믿어야 할지 판단하기 어렵기 때문이에요. "
-                "두 값이 비슷하면 추정이 안정적이라는 뜻이고, 크게 다르면 이 회사가 업종 평균과 다른 특징(예: 최신 저탄소 설비)을 "
-                "가지고 있다는 신호일 수 있어요."
-            )
-            st.write(
-                f"이 회사에 적용된 업종평균 배출집약도: "
-                f"**{result.benchmark_estimate / (result.financials.get('매출액', 1) / 1e8):,.0f} tCO2eq / 매출 1억원** "
-                f"({result.benchmark_source})"
-            )
-
-    with tab3:
-        st.markdown("#### AI가 쉽게 풀어서 설명해주는 리포트")
-        if st.session_state.get("report_key") != corp["corp_code"]:
-            with st.spinner("AI가 리포트를 쓰는 중이에요..."):
-                try:
-                    context = analysis.build_llm_context(result)
-                    st.session_state.report_text = generate_report(context)
-                    st.session_state.report_key = corp["corp_code"]
-                    try:
-                        db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
-                    except Exception:  # noqa: BLE001
-                        pass
-                except Exception as e:  # noqa: BLE001
-                    st.session_state.report_text = None
-                    st.error(f"리포트 생성에 실패했어요: {e}")
-        if st.session_state.get("report_text"):
-            with st.container(border=True):
-                st.markdown(st.session_state.report_text)
-
-    with tab4:
-        st.markdown("#### 지금까지 분석했던 기록")
-        if not db.is_enabled():
-            st.info("기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 켜져요.")
-        else:
+with tab1:
+    if st.session_state.get("report_key") != corp["corp_code"]:
+        with st.spinner("AI가 리포트를 쓰는 중이에요..."):
             try:
-                rows = db.fetch_recent_estimates(sb, limit=20)
+                context = analysis.build_llm_context(result)
+                st.session_state.report_text = generate_report(context)
+                st.session_state.report_key = corp["corp_code"]
+                try:
+                    db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
+                except Exception:  # noqa: BLE001
+                    pass
             except Exception as e:  # noqa: BLE001
-                rows = []
-                st.error(f"기록을 불러오지 못했어요: {e}")
-            if rows:
-                history_df = pd.DataFrame(rows)[
-                    ["created_at", "corp_name", "industry", "actual_scope12", "model_estimate_scope12", "scope3_estimate"]
-                ].rename(
-                    columns={
-                        "created_at": "분석 시각",
-                        "corp_name": "회사명",
-                        "industry": "업종",
-                        "actual_scope12": "실제 Scope1+2",
-                        "model_estimate_scope12": "모델 Scope1+2",
-                        "scope3_estimate": "Scope3 추정",
-                    }
-                )
-                st.dataframe(history_df, width="stretch")
-            else:
-                st.info("아직 쌓인 기록이 없어요. 분석을 실행하면 여기에 쌓여요.")
+                st.session_state.report_text = None
+                st.error(f"리포트 생성에 실패했어요: {e}")
+    if st.session_state.get("report_text"):
+        with st.container(border=True):
+            st.markdown(st.session_state.report_text)
+
+with tab2:
+    if not db.is_enabled():
+        st.info("기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 켜져요.")
+    else:
+        try:
+            rows = db.fetch_recent_estimates(sb, limit=20)
+        except Exception as e:  # noqa: BLE001
+            rows = []
+            st.error(f"기록을 불러오지 못했어요: {e}")
+        if rows:
+            import pandas as pd
+
+            history_df = pd.DataFrame(rows)[
+                ["created_at", "corp_name", "industry", "actual_scope12", "model_estimate_scope12", "scope3_estimate"]
+            ].rename(
+                columns={
+                    "created_at": "분석 시각",
+                    "corp_name": "회사명",
+                    "industry": "업종",
+                    "actual_scope12": "실제 Scope1+2",
+                    "model_estimate_scope12": "모델 Scope1+2",
+                    "scope3_estimate": "Scope3 추정",
+                }
+            )
+            st.dataframe(history_df, width="stretch")
+        else:
+            st.info("아직 쌓인 기록이 없어요. 분석을 실행하면 여기에 쌓여요.")
