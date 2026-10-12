@@ -291,19 +291,37 @@ st.markdown(
 )
 
 if "sb_client" not in st.session_state:
-    st.session_state.sb_client = db.create_client()
+    try:
+        st.session_state.sb_client = db.create_client()
+    except Exception:  # noqa: BLE001
+        st.session_state.sb_client = None
 sb = st.session_state.sb_client
 
 if "corp_cache_warm" not in st.session_state:
     with st.spinner("기업 목록을 불러오는 중이에요 (최초 1회, 몇 초 걸려요)..."):
-        fetch_dart.warm_up_corp_cache()
+        try:
+            fetch_dart.warm_up_corp_cache()
+            st.session_state.corp_cache_ok = True
+        except Exception as e:  # noqa: BLE001
+            st.session_state.corp_cache_ok = False
+            st.session_state.corp_cache_error = str(e)
     st.session_state.corp_cache_warm = True
+
+if not st.session_state.get("corp_cache_ok", True):
+    st.error(
+        f"DART에서 기업 목록을 불러오지 못했어요 ({st.session_state.get('corp_cache_error', '')}). "
+        "DART 쪽이 일시적으로 불안정할 수 있어요 — 잠시 후 새로고침해보세요."
+    )
 
 try:
     industries = analysis.list_known_industries()
-except FileNotFoundError:
+except Exception as e:  # noqa: BLE001
     industries = []
-    st.error("학습된 모델이 없습니다. `python build_emissions_dataset.py` 후 `python train_model.py`를 먼저 실행하세요.")
+    st.error(
+        "학습된 모델을 불러오지 못했어요. "
+        "`python build_emissions_dataset.py` 후 `python train_model.py`를 먼저 실행했는지 확인하세요. "
+        f"(오류: {e})"
+    )
 
 with st.container(border=True):
     c1, c2 = st.columns([4, 1])
@@ -312,7 +330,11 @@ with st.container(border=True):
             "회사 이름", value="삼성전자", placeholder="예: 삼성전자, SK하이닉스, 포스코",
             label_visibility="collapsed",
         )
-    candidates = fetch_dart.search_corp_by_name(company_query) if company_query else []
+    try:
+        candidates = fetch_dart.search_corp_by_name(company_query) if company_query else []
+    except Exception as e:  # noqa: BLE001
+        candidates = []
+        st.error(f"회사 검색 중 오류가 발생했어요: {e}")
 
     selected_corp = None
     if candidates:
