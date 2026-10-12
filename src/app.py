@@ -341,6 +341,35 @@ with st.container(border=True):
     with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)"):
         industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
 
+# ── 분석 이력: Supabase 저장 내역을 분석 실행 여부와 무관하게 바로 볼 수 있게 ──
+with st.expander("📜 지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
+    if not db.is_enabled():
+        st.info("기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 켜져요.")
+    else:
+        try:
+            history_rows = db.fetch_recent_estimates(sb, limit=20)
+        except Exception as e:  # noqa: BLE001
+            history_rows = []
+            st.error(f"기록을 불러오지 못했어요: {e}")
+        if history_rows:
+            import pandas as pd
+
+            history_df = pd.DataFrame(history_rows)[
+                ["created_at", "corp_name", "industry", "actual_scope12", "model_estimate_scope12", "scope3_estimate"]
+            ].rename(
+                columns={
+                    "created_at": "분석 시각",
+                    "corp_name": "회사명",
+                    "industry": "업종",
+                    "actual_scope12": "실제 Scope1+2",
+                    "model_estimate_scope12": "모델 Scope1+2",
+                    "scope3_estimate": "Scope3 추정",
+                }
+            )
+            st.dataframe(history_df, width="stretch")
+        else:
+            st.info("아직 쌓인 기록이 없어요. 분석을 실행하면 여기에 쌓여요.")
+
 # ── 시스템 구성: 보고서의 10개 항목을 그대로 카드 그리드로 ────────────────────
 st.markdown('<div class="sec-label"><i></i>이 시스템은 이렇게 만들어졌습니다 — 시스템 구성</div>', unsafe_allow_html=True)
 cards_html = '<div class="comp-grid">'
@@ -473,55 +502,25 @@ with st.container(border=True):
 
 st.write("")
 
-# ── AI 리포트 / 분석 이력 ──────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["Claude API 리포트", "Supabase 분석 이력"])
-
-with tab1:
-    if st.session_state.get("report_key") != corp["corp_code"]:
-        with st.spinner("AI가 리포트를 쓰는 중이에요..."):
-            try:
-                context = analysis.build_llm_context(result)
-                st.session_state.report_text = generate_report(context)
-                st.session_state.report_key = corp["corp_code"]
-                try:
-                    db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
-                except Exception:  # noqa: BLE001
-                    pass
-            except Exception as e:  # noqa: BLE001
-                st.session_state.report_text = None
-                st.error(f"리포트 생성에 실패했어요: {e}")
-    if st.session_state.get("report_text"):
-        with st.container(border=True):
-            st.markdown(
-                '<div class="report-head"><div class="dot"></div><span>Claude가 생성한 리포트</span></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(st.session_state.report_text)
-
-with tab2:
-    if not db.is_enabled():
-        st.info("기록 저장 기능이 꺼져 있어요. SUPABASE_URL / SUPABASE_KEY 환경변수를 설정하면 켜져요.")
-    else:
+# ── AI 리포트 ────────────────────────────────────────────────────────────────
+st.markdown('<div class="sec-label"><i></i>Claude API 리포트</div>', unsafe_allow_html=True)
+if st.session_state.get("report_key") != corp["corp_code"]:
+    with st.spinner("AI가 리포트를 쓰는 중이에요..."):
         try:
-            rows = db.fetch_recent_estimates(sb, limit=20)
+            context = analysis.build_llm_context(result)
+            st.session_state.report_text = generate_report(context)
+            st.session_state.report_key = corp["corp_code"]
+            try:
+                db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
-            rows = []
-            st.error(f"기록을 불러오지 못했어요: {e}")
-        if rows:
-            import pandas as pd
-
-            history_df = pd.DataFrame(rows)[
-                ["created_at", "corp_name", "industry", "actual_scope12", "model_estimate_scope12", "scope3_estimate"]
-            ].rename(
-                columns={
-                    "created_at": "분석 시각",
-                    "corp_name": "회사명",
-                    "industry": "업종",
-                    "actual_scope12": "실제 Scope1+2",
-                    "model_estimate_scope12": "모델 Scope1+2",
-                    "scope3_estimate": "Scope3 추정",
-                }
-            )
-            st.dataframe(history_df, width="stretch")
-        else:
-            st.info("아직 쌓인 기록이 없어요. 분석을 실행하면 여기에 쌓여요.")
+            st.session_state.report_text = None
+            st.error(f"리포트 생성에 실패했어요: {e}")
+if st.session_state.get("report_text"):
+    with st.container(border=True):
+        st.markdown(
+            '<div class="report-head"><div class="dot"></div><span>Claude가 생성한 리포트</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(st.session_state.report_text)
