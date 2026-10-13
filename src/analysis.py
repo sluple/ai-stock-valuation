@@ -60,6 +60,13 @@ def industry_display_map() -> dict[str, str]:
     return build_industry_display_map()
 
 
+def has_actual_disclosure(corp_code: str) -> bool:
+    """이 기업이 K-ETS 실측 데이터에 있는지만 가볍게 확인한다 (화면에서 업종 추천을
+    보여줄지 말지 미리 판단하는 용도 — 실측이 있으면 업종 선택 자체가 무시되므로
+    추천을 보여줄 필요가 없다)."""
+    return _find_actual_disclosure(corp_code)[0] is not None
+
+
 def _find_actual_disclosure(corp_code: str) -> tuple[float | None, str | None]:
     """이 기업이 K-ETS 배출권거래제 대상이라 실제 배출량이 이미 공시돼 있는지 확인한다.
 

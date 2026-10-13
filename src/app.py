@@ -528,9 +528,14 @@ with st.container(border=True):
     suggested = None
     if selected_corp:
         try:
-            suggested = industry_suggest.suggest_industry(selected_corp.get("stock_code"), industries)
+            already_disclosed = analysis.has_actual_disclosure(selected_corp["corp_code"])
         except Exception:  # noqa: BLE001
-            suggested = None
+            already_disclosed = False
+        if not already_disclosed:
+            try:
+                suggested = industry_suggest.suggest_industry(selected_corp.get("stock_code"), industries)
+            except Exception:  # noqa: BLE001
+                suggested = None
 
     with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)", expanded=bool(suggested)):
         st.caption("공시 대상이 아닌 기업은 업종을 직접 골라야 해요. 아래 칸을 클릭하고 업종 이름 일부를 타이핑하면 바로 검색돼요 (예: '철강', '화학').")
