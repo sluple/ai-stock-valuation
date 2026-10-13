@@ -516,7 +516,11 @@ with st.container(border=True):
         run_button = st.button("분석 시작", type="primary", width="stretch", disabled=selected_corp is None)
 
     with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)"):
-        industry_choice = st.selectbox("업종", ["(자동 감지)"] + industries, label_visibility="collapsed")
+        st.caption("공시 대상이 아닌 기업은 업종을 직접 골라야 해요. 아래 칸을 클릭하고 업종 이름 일부를 타이핑하면 바로 검색돼요 (예: '철강', '화학').")
+        industry_choice = st.selectbox(
+            "업종", ["(자동 감지)"] + industries, label_visibility="collapsed",
+            placeholder="업종 이름을 입력해 검색...",
+        )
 
 with st.expander("지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
     if not db.is_enabled():
