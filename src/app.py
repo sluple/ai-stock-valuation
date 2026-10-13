@@ -488,6 +488,15 @@ except Exception as e:  # noqa: BLE001
         f"(오류: {e})"
     )
 
+try:
+    industry_display = analysis.industry_display_map()
+except Exception:  # noqa: BLE001
+    industry_display = {}
+
+
+def fmt_industry(key: str) -> str:
+    return industry_display.get(key, key)
+
 with st.container(border=True):
     c1, c2 = st.columns([4, 1])
     with c1:
@@ -520,6 +529,7 @@ with st.container(border=True):
         industry_choice = st.selectbox(
             "업종", ["(자동 감지)"] + industries, label_visibility="collapsed",
             placeholder="업종 이름을 입력해 검색...",
+            format_func=lambda v: v if v == "(자동 감지)" else fmt_industry(v),
         )
 
 with st.expander("지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
@@ -602,7 +612,7 @@ scope12_display = result.actual_scope12 if result.actual_scope12 is not None els
 
 st.write("")
 st.markdown(
-    f'<div class="sec-label"><i></i>{corp["corp_name"]} · {result.industry} · 매출 {fmt_won(result.financials.get("매출액"))}</div>',
+    f'<div class="sec-label"><i></i>{corp["corp_name"]} · {fmt_industry(result.industry)} · 매출 {fmt_won(result.financials.get("매출액"))}</div>',
     unsafe_allow_html=True,
 )
 
@@ -745,7 +755,7 @@ with st.container(border=True):
             chart_industry_benchmark(industry_intensities, target_intensity, corp["corp_name"]),
             width="stretch", config={"displayModeBar": False},
         )
-        st.caption(f"{result.industry} 내 {len(industry_intensities)}개 기업 중 배출집약도 상위 {100 - percentile:.0f}% 구간입니다.")
+        st.caption(f"{fmt_industry(result.industry)} 내 {len(industry_intensities)}개 기업 중 배출집약도 상위 {100 - percentile:.0f}% 구간입니다.")
     else:
         st.info("같은 업종 내 비교할 기업 수가 너무 적어요.")
 
@@ -778,7 +788,7 @@ st.write("")
 # ── 분석 결과 다운로드 ─────────────────────────────────────────────────────────
 summary_lines = [
     f"# {corp['corp_name']} 탄소배출량 분석 결과",
-    f"- 업종: {result.industry} ({result.industry_source})",
+    f"- 업종: {fmt_industry(result.industry)} ({result.industry_source})",
     f"- 매출액: {fmt_won(result.financials.get('매출액'))}",
     "",
     "## Scope 1+2 추정",

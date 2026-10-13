@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 import emissions_model
-from emissions_data import load_emissions_data, normalize_company_name
+from emissions_data import build_industry_display_map, load_emissions_data, normalize_company_name
 from fetch_dart import find_corp_code, get_financial_statements
 from normalize import build_financial_table
 
@@ -46,9 +46,18 @@ class EmissionsResult:
 
 
 def list_known_industries() -> list[str]:
-    """학습 데이터에 존재하는 업종(계획업종) 목록 — 사용자가 업종을 고를 때 쓴다."""
+    """학습 데이터에 존재하는 업종(계획업종, 공백 제거된 내부 매칭 키) 목록."""
     df = emissions_model.load_training_data()
     return sorted(df["계획업종"].dropna().unique().tolist())
+
+
+def industry_display_map() -> dict[str, str]:
+    """내부 매칭 키(공백 없음) -> 화면에 보여줄 원래 표기(띄어쓰기 포함).
+
+    list_known_industries()가 돌려주는 값은 2024/2025 데이터를 합치려고 공백을
+    지운 내부 키라 "곡물가공품,전분및전분제품제조업"처럼 읽기 불편하다. 드롭다운이나
+    화면에 업종명을 보여줄 땐 반드시 이 맵을 거쳐서 보여준다."""
+    return build_industry_display_map()
 
 
 def _find_actual_disclosure(corp_code: str) -> tuple[float | None, str | None]:
@@ -216,10 +225,11 @@ def safe_round(x, n: int = 4):
 
 
 def build_llm_context(result: EmissionsResult) -> dict:
+    display = industry_display_map()
     return {
         "기업명": result.corp["corp_name"],
         "기준연도": TARGET_YEAR,
-        "업종": result.industry,
+        "업종": display.get(result.industry, result.industry),
         "업종_판별방법": result.industry_source,
         "재무데이터": {
             "매출액": safe_round(result.financials.get("매출액"), 0),

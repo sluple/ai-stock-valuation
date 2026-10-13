@@ -80,6 +80,23 @@ def load_emissions_data(paths: list[str] | None = None) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def build_industry_display_map(paths: list[str] | None = None) -> dict[str, str]:
+    """공백을 지운 업종명(내부 매칭 키) -> 사람이 읽기 좋은 원래 표기(띄어쓰기 포함).
+
+    내부 매칭(그룹핑)에는 공백을 지운 키를 계속 쓰지만, 화면에 보여줄 땐 이 맵으로
+    원래 표기를 되돌려서 보여준다. 가장 최근 연도 파일을 우선으로 채택한다
+    (리스트 뒤쪽 파일 = 더 최신이라고 가정하고 덮어쓴다).
+    """
+    paths = paths if paths is not None else EMISSIONS_CSV_FILES
+    mapping: dict[str, str] = {}
+    for path in paths:
+        df = pd.read_csv(path, encoding="cp949")
+        for original in df["계획업종"].dropna().unique():
+            stripped = original.replace(" ", "")
+            mapping[stripped] = original  # 뒤 파일(최신 연도)이 앞 파일 값을 덮어씀
+    return mapping
+
+
 def build_corp_name_index() -> dict[str, dict]:
     """DART CORPCODE.xml 전체(상장사+비상장 외부감사대상법인 포함)로 정규화명 -> 기업정보 인덱스를 만든다.
 
