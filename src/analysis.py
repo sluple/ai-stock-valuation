@@ -35,6 +35,7 @@ class EmissionsResult:
     estimate_divergence_ratio: float
     is_typical_pattern: bool
     tree_predictions: list[float]
+    feature_importance: dict[str, float]
     warnings: list[str] = field(default_factory=list)
 
 
@@ -152,8 +153,41 @@ def run_analysis_for_corp(corp: dict, industry_override: str | None = None) -> E
         estimate_divergence_ratio=divergence_ratio,
         is_typical_pattern=is_typical_pattern,
         tree_predictions=preds["tree_predictions"],
+        feature_importance=preds["feature_importance"],
         warnings=warnings,
     )
+
+
+def get_multi_year_trend(corp: dict, industry: str, years: list[int]) -> list[dict]:
+    """여러 연도에 걸쳐 재무데이터를 조회해 추정 배출량 추이를 계산한다 (지연 로딩 전용).
+
+    연도별로 DART 호출이 추가로 필요해 분석 실행 시 자동으로는 돌리지 않고,
+    사용자가 "연도별 추이 보기"를 눌렀을 때만 호출한다. 조회 실패한 연도는 건너뛴다.
+    """
+    artifact = emissions_model.load_model()
+    trend = []
+    for year in years:
+        try:
+            data = get_financial_statements(corp["corp_code"], year, fs_div="OFS")
+            if data.get("status") != "000":
+                data = get_financial_statements(corp["corp_code"], year, fs_div="CFS")
+            if data.get("status") != "000":
+                continue
+            fin = build_financial_table(data.get("list", []))
+            if "매출액" not in fin:
+                continue
+            preds = emissions_model.predict_scope12(
+                artifact, revenue=fin["매출액"], cogs=fin.get("매출원가"), industry=industry
+            )
+            trend.append({
+                "연도": year,
+                "매출액": fin["매출액"],
+                "회귀모델_추정": preds["model_estimate"],
+                "업종평균_추정": preds["benchmark_estimate"],
+            })
+        except Exception:  # noqa: BLE001
+            continue
+    return trend
 
 
 def safe_round(x, n: int = 4):

@@ -5,11 +5,14 @@
 
 실행: streamlit run app.py
 """
+import statistics
+
 import plotly.graph_objects as go
 import streamlit as st
 
 import analysis
 import db
+import emissions_model
 import fetch_dart
 from llm_report import generate_report
 
@@ -63,14 +66,20 @@ PLOTLY_LAYOUT = dict(
 
 
 def chart_comparison(points, threshold):
-    """실측값·회귀모델·업종평균을 막대로 비교 + 전형 범위를 띠로 표시."""
+    """실측값·회귀모델·업종평균을 막대로 비교 + 전형 범위를 띠로 표시.
+
+    points의 각 항목에 "error"(표준편차, tCO2eq)가 있으면 해당 막대에 오차막대를 그린다
+    (회귀모델 추정에는 나무 300개 예측치의 표준편차를 신뢰구간으로 붙인다)."""
     labels = [p["label"] for p in points]
     values = [p["value"] for p in points]
     colors = [p["color"] for p in points]
+    errors = [p.get("error", 0) for p in points]
+    has_error = any(e for e in errors)
     fig = go.Figure(
         go.Bar(
             x=labels, y=values, marker_color=colors, text=[f"{v:,.0f}" for v in values],
             textposition="outside", textfont=dict(color=INK, size=13), width=0.5,
+            error_y=dict(type="data", array=errors, color=INK2, thickness=1.5, width=5) if has_error else None,
         )
     )
     lo = min(values)
@@ -224,6 +233,62 @@ def chart_tree_scatter(tree_predictions, model_estimate):
         **PLOTLY_LAYOUT, height=260, showlegend=False,
         xaxis=dict(title="나무 번호 (1~300)", gridcolor=LINE, linecolor=BASELINE, title_font=dict(size=11)),
         yaxis=dict(title="예측치 (tCO2eq)", gridcolor=LINE, zerolinecolor=BASELINE, title_font=dict(size=11)),
+    )
+    return fig
+
+
+def chart_feature_importance(feature_importance: dict):
+    """회귀모델이 세 입력 중 무엇을 가장 많이 참고했는지 (scikit-learn feature_importances_)."""
+    items = sorted(feature_importance.items(), key=lambda kv: kv[1])
+    labels = [k for k, _ in items]
+    values = [v for _, v in items]
+    fig = go.Figure(go.Bar(
+        x=values, y=labels, orientation="h", marker_color=[BLUE, BLUE, ORANGE][: len(values)],
+        text=[f"{v * 100:.1f}%" for v in values], textposition="outside", textfont=dict(color=INK, size=12),
+    ))
+    fig.update_layout(
+        **PLOTLY_LAYOUT, height=200, showlegend=False,
+        xaxis=dict(title="중요도", gridcolor=LINE, zerolinecolor=BASELINE, tickformat=".0%", title_font=dict(size=11)),
+        yaxis=dict(linecolor=BASELINE),
+    )
+    return fig
+
+
+def chart_industry_benchmark(intensities, target_intensity, target_label):
+    """같은 업종 기업들의 배출집약도 분포 안에서 이 기업의 위치를 보여준다."""
+    fig = go.Figure()
+    fig.add_trace(go.Box(
+        x=intensities, name="업종 내 기업들", marker_color=INK2, line_color=INK2,
+        boxpoints="all", jitter=0.5, pointpos=0, marker=dict(size=4, opacity=0.35, color=MUT),
+        fillcolor=SURFACE2,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[target_intensity], y=["업종 내 기업들"], mode="markers",
+        marker=dict(size=14, color=ORANGE, symbol="diamond", line=dict(color=INK, width=1.5)),
+        name=target_label, hovertemplate=f"{target_label}: %{{x:,.0f}}<extra></extra>",
+    ))
+    fig.update_layout(
+        **PLOTLY_LAYOUT, height=180, showlegend=False,
+        xaxis=dict(title="배출집약도 (tCO2eq / 매출 1억원)", gridcolor=LINE, zerolinecolor=BASELINE, title_font=dict(size=11)),
+        yaxis=dict(visible=False),
+    )
+    return fig
+
+
+def chart_year_trend(trend):
+    years = [t["연도"] for t in trend]
+    model_vals = [t["회귀모델_추정"] for t in trend]
+    bench_vals = [t["업종평균_추정"] for t in trend]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years, y=model_vals, mode="lines+markers", name="회귀모델 추정",
+                              line=dict(color=BLUE, width=2), marker=dict(size=8)))
+    fig.add_trace(go.Scatter(x=years, y=bench_vals, mode="lines+markers", name="업종평균 추정",
+                              line=dict(color=ORANGE, width=2), marker=dict(size=8)))
+    fig.update_layout(
+        **PLOTLY_LAYOUT, height=260, showlegend=True,
+        legend=dict(orientation="h", y=-0.2, font=dict(color=INK2, size=11)),
+        xaxis=dict(title="연도", gridcolor=LINE, linecolor=BASELINE, dtick=1, title_font=dict(size=11)),
+        yaxis=dict(title="tCO2eq", gridcolor=LINE, zerolinecolor=BASELINE, title_font=dict(size=11)),
     )
     return fig
 
@@ -550,15 +615,20 @@ with st.container(border=True):
         '<div class="viz-desc">실측값(있는 경우)·회귀모델·업종평균을 막대로 비교하고, 서로 30% 이내로 가까운지로 신뢰도를 판단합니다.</div>',
         unsafe_allow_html=True,
     )
+    tree_std = statistics.pstdev(result.tree_predictions) if len(result.tree_predictions) > 1 else 0.0
     points = []
     if result.actual_scope12 is not None:
         points.append({"label": "실제 공시값", "value": result.actual_scope12, "color": INK2})
-    points.append({"label": "회귀모델 추정", "value": result.model_estimate, "color": BLUE})
+    points.append({"label": "회귀모델 추정", "value": result.model_estimate, "color": BLUE, "error": tree_std})
     points.append({"label": "업종평균 추정", "value": result.benchmark_estimate, "color": ORANGE})
     st.plotly_chart(chart_comparison(points, analysis.TYPICAL_PATTERN_THRESHOLD), width="stretch", config={"displayModeBar": False})
     badge_cls = "badge-good" if result.is_typical_pattern else "badge-warn"
     badge_txt = "✓ 업종 내 전형적인 배출 패턴" if result.is_typical_pattern else "⚠ 방법론 간 편차가 큼"
     st.markdown(f'<span class="badge {badge_cls}">{badge_txt}</span>', unsafe_allow_html=True)
+    st.caption(
+        f"회귀모델 추정 신뢰구간: {result.model_estimate:,.0f} ± {tree_std:,.0f} tCO2eq "
+        "(나무 300개 개별 예측치의 표준편차 기준)"
+    )
 
 st.write("")
 
@@ -633,6 +703,106 @@ with st.container(border=True):
         chart_scale_bullet(revenue, median_revenue, result.scale_ratio, result.scale_warning),
         width="stretch", config={"displayModeBar": False},
     )
+
+st.write("")
+
+# ── 6) 피처 중요도 ─────────────────────────────────────────────────────────────
+with st.container(border=True):
+    st.markdown(
+        '<div class="card-head"><div class="num">6</div><h5>회귀모델은 세 입력 중 무엇을 가장 많이 참고했을까요</h5></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="viz-desc">scikit-learn이 학습 시점에 계산해 둔 feature_importances_ 값입니다. 업종추정치(EEIO)의 비중이 크다면, 결국 업종 평균을 기준점으로 삼고 있다는 뜻입니다.</div>',
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(
+        chart_feature_importance(result.feature_importance),
+        width="stretch", config={"displayModeBar": False},
+    )
+
+st.write("")
+
+# ── 7) 업종 내 위치 비교 (벤치마킹) ───────────────────────────────────────────
+with st.container(border=True):
+    st.markdown(
+        '<div class="card-head"><div class="num">7</div><h5>같은 업종 다른 기업들과 비교하면 어디쯤일까요</h5></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="viz-desc">학습 데이터에 있는 같은 업종 기업들의 배출집약도 분포 위에, 이 기업(◆)의 위치를 표시합니다.</div>',
+        unsafe_allow_html=True,
+    )
+    industry_intensities = emissions_model.get_industry_intensities(result.industry)
+    target_intensity = (scope12_display / (revenue / 1e8)) if revenue else 0
+    if len(industry_intensities) >= 3:
+        percentile = sum(1 for v in industry_intensities if v <= target_intensity) / len(industry_intensities) * 100
+        st.plotly_chart(
+            chart_industry_benchmark(industry_intensities, target_intensity, corp["corp_name"]),
+            width="stretch", config={"displayModeBar": False},
+        )
+        st.caption(f"{result.industry} 내 {len(industry_intensities)}개 기업 중 배출집약도 상위 {100 - percentile:.0f}% 구간입니다.")
+    else:
+        st.info("같은 업종 내 비교할 기업 수가 너무 적어요.")
+
+st.write("")
+
+# ── 8) 연도별 추이 (지연 로딩 — DART 호출이 추가로 필요해 버튼을 눌러야 조회) ──
+with st.container(border=True):
+    st.markdown(
+        '<div class="card-head"><div class="num">8</div><h5>연도별로는 어떻게 바뀌어 왔을까요</h5></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="viz-desc">최근 3개 연도 재무데이터를 추가로 조회해 추정 배출량 추이를 보여줍니다 (DART 호출이 늘어나 버튼을 눌러야 조회됩니다).</div>',
+        unsafe_allow_html=True,
+    )
+    trend_key = f"trend_{corp['corp_code']}"
+    if st.button("연도별 추이 조회", key="trend_button"):
+        with st.spinner("최근 3개 연도 재무데이터를 조회하는 중이에요..."):
+            years = [analysis.TARGET_YEAR - 2, analysis.TARGET_YEAR - 1, analysis.TARGET_YEAR]
+            st.session_state[trend_key] = analysis.get_multi_year_trend(corp, result.industry, years)
+    trend_data = st.session_state.get(trend_key)
+    if trend_data:
+        if len(trend_data) >= 2:
+            st.plotly_chart(chart_year_trend(trend_data), width="stretch", config={"displayModeBar": False})
+        else:
+            st.info("조회 가능한 연도가 1개뿐이라 추이를 그릴 수 없어요.")
+
+st.write("")
+
+# ── 분석 결과 다운로드 ─────────────────────────────────────────────────────────
+summary_lines = [
+    f"# {corp['corp_name']} 탄소배출량 분석 결과",
+    f"- 업종: {result.industry} ({result.industry_source})",
+    f"- 매출액: {fmt_won(result.financials.get('매출액'))}",
+    "",
+    "## Scope 1+2 추정",
+    f"- 실제 공시값: {fmt_ton(result.actual_scope12)}",
+    f"- 회귀모델 추정: {fmt_ton(result.model_estimate)} (±{tree_std:,.0f})",
+    f"- 업종평균 추정: {fmt_ton(result.benchmark_estimate)}",
+    f"- 방법론 간 편차율: {result.estimate_divergence_ratio * 100:.1f}% "
+    f"({'전형적 배출 패턴' if result.is_typical_pattern else '편차가 큼'})",
+    "",
+    "## Scope 3 확장",
+    f"- Scope 3 추정(CDP ×3): {fmt_ton(result.scope3_estimate)}",
+    f"- 총 배출량: {fmt_ton(scope12_display + result.scope3_estimate)}",
+    "",
+    "## 규모 이상치",
+    f"- 업종 중앙값 대비 매출 배율: {result.scale_ratio:.2f}배 ({'경고' if result.scale_warning else '정상'})",
+    "",
+    "## 피처 중요도",
+] + [f"- {k}: {v * 100:.1f}%" for k, v in result.feature_importance.items()]
+if st.session_state.get("report_text"):
+    summary_lines += ["", "## AI 리포트", st.session_state["report_text"]]
+summary_md = "\n".join(summary_lines)
+
+st.download_button(
+    "📥 분석 결과 다운로드 (.md)",
+    data=summary_md.encode("utf-8"),
+    file_name=f"{corp['corp_name']}_탄소배출량_분석결과.md",
+    mime="text/markdown",
+)
 
 st.write("")
 

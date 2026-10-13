@@ -153,6 +153,15 @@ def predict_scope12(artifact: dict, revenue: float, cogs: float | None, industry
     scale_ratio = revenue / industry_median_revenue if industry_median_revenue else 1.0
     scale_warning = scale_ratio >= SCALE_WARNING_MULTIPLE
 
+    # 피처 중요도: 회귀모델이 세 입력(매출액·매출원가·업종추정치) 중 무엇을 가장
+    # 많이 참고해 분기를 나눴는지. scikit-learn이 학습 시점에 이미 계산해 둔 값이다.
+    importances = artifact["model"].feature_importances_
+    feature_importance = {
+        "매출액": float(importances[0]),
+        "매출원가": float(importances[1]),
+        "업종추정치(EEIO)": float(importances[2]),
+    }
+
     return {
         "model_estimate": model_estimate,
         "benchmark_estimate": benchmark_estimate,
@@ -161,7 +170,15 @@ def predict_scope12(artifact: dict, revenue: float, cogs: float | None, industry
         "scale_ratio": scale_ratio,
         "scale_warning": scale_warning,
         "tree_predictions": tree_predictions,
+        "feature_importance": feature_importance,
     }
+
+
+def get_industry_intensities(industry: str) -> list[float]:
+    """같은 업종 기업들의 배출집약도(tCO2eq / 매출 1억원) 목록 — 벤치마킹 시각화용."""
+    df = load_training_data()
+    same = df[df["계획업종"] == industry]
+    return (same["배출량_tCO2eq"] / (same["매출액"] / 1e8)).tolist()
 
 
 def estimate_scope3(scope12_estimate: float, multiplier: float = SCOPE3_MULTIPLIER_DEFAULT) -> float:
