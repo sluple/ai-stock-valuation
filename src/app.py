@@ -14,6 +14,7 @@ import analysis
 import db
 import emissions_model
 import fetch_dart
+import industry_suggest
 from llm_report import generate_report
 
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="🌍", layout="wide")
@@ -524,13 +525,28 @@ with st.container(border=True):
     with c2:
         run_button = st.button("분석 시작", type="primary", width="stretch", disabled=selected_corp is None)
 
-    with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)"):
+    suggested = None
+    if selected_corp:
+        try:
+            suggested = industry_suggest.suggest_industry(selected_corp.get("stock_code"), industries)
+        except Exception:  # noqa: BLE001
+            suggested = None
+
+    with st.expander("업종을 직접 선택하고 싶다면 (배출권거래제 공시 대상 기업은 자동 감지)", expanded=bool(suggested)):
         st.caption("공시 대상이 아닌 기업은 업종을 직접 골라야 해요. 아래 칸을 클릭하고 업종 이름 일부를 타이핑하면 바로 검색돼요 (예: '철강', '화학').")
+        industry_options = ["(자동 감지)"] + industries
+        default_index = industry_options.index(suggested["계획업종"]) if suggested else 0
         industry_choice = st.selectbox(
-            "업종", ["(자동 감지)"] + industries, label_visibility="collapsed",
+            "업종", industry_options, index=default_index, label_visibility="collapsed",
             placeholder="업종 이름을 입력해 검색...",
             format_func=lambda v: v if v == "(자동 감지)" else fmt_industry(v),
         )
+        if suggested:
+            st.caption(
+                f"💡 KRX(한국거래소) 상장법인목록 기준 추천: **{fmt_industry(suggested['계획업종'])}** "
+                f"(주요제품: {suggested['주요제품']}) — 배출권거래제 공시 대상이 아니면 이 값이 쓰여요. "
+                "실제 업종과 다르면 위에서 직접 바꿔주세요."
+            )
 
 with st.expander("지금까지 분석한 기록 보기 (Supabase에 저장된 전체 이력)"):
     if not db.is_enabled():
