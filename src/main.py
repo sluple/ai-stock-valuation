@@ -4,7 +4,7 @@
 """
 import sys
 
-from analysis import build_llm_context, run_analysis
+from analysis import TARGET_YEAR, build_llm_context, industry_display_map, run_analysis
 from llm_report import generate_report
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -16,10 +16,11 @@ def main() -> None:
     result = run_analysis(TARGET)
     corp = result.corp
 
+    display = industry_display_map()
     print(f"대상 기업: {corp['corp_name']} ({corp['stock_code']})")
-    print(f"업종: {result.industry} ({result.industry_source})\n")
+    print(f"업종: {display.get(result.industry, result.industry)} ({result.industry_source})\n")
 
-    print("=== 재무데이터 (2024년) ===")
+    print(f"=== 재무데이터 ({TARGET_YEAR}년) ===")
     print(f"매출액: {result.financials.get('매출액'):,.0f}원")
     print(f"매출원가: {result.financials.get('매출원가', 0):,.0f}원\n")
 

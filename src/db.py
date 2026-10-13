@@ -32,7 +32,9 @@ def save_estimate(client, result, report_text: str | None, context: dict) -> str
     row = {
         "corp_name": result.corp["corp_name"],
         "stock_code": result.corp["stock_code"],
-        "industry": result.industry,
+        # result.industry는 공백 없는 내부 매칭 키라 이력 테이블엔 읽기 좋은 표시명을 쓴다
+        # (context["업종"]은 analysis.build_llm_context가 이미 표시명으로 변환해 둔 값).
+        "industry": context.get("업종", result.industry),
         "industry_source": result.industry_source,
         "revenue": result.financials.get("매출액"),
         "actual_scope12": result.actual_scope12,
