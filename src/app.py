@@ -127,13 +127,24 @@ def chart_scope3_donut(scope12, scope3):
     return fig
 
 
+def _won_unit(x):
+    """원 단위 숫자를 조/억원 중 보기 좋은 단위로 환산 (차트에 14자리 숫자가 그대로
+    찍히면 영역 밖으로 밀려나가므로, 억/조원 단위로 줄여서 짧게 표시한다)."""
+    if x >= 1e12:
+        return 1e12, "조원"
+    return 1e8, "억원"
+
+
 def chart_scale_bullet(revenue, median_revenue, ratio, scale_warning):
     fill = WARNING if scale_warning else GOOD
-    axis_max = max(revenue, median_revenue * 5) * 1.15
+    divisor, unit = _won_unit(max(revenue, median_revenue))
+    rev_u = revenue / divisor
+    med_u = median_revenue / divisor
+    axis_max = max(rev_u, med_u * 5) * 1.15
     fig = go.Figure(go.Indicator(
         mode="number+gauge",
-        value=revenue,
-        number=dict(valueformat=",.0f", font=dict(color=INK, size=22)),
+        value=rev_u,
+        number=dict(valueformat=",.1f", suffix=f" {unit}", font=dict(color=INK, size=22)),
         domain=dict(x=[0.08, 0.95], y=[0.35, 0.65]),
         gauge=dict(
             shape="bullet",
@@ -141,13 +152,13 @@ def chart_scale_bullet(revenue, median_revenue, ratio, scale_warning):
             bar=dict(color=fill, thickness=0.55),
             bgcolor=SURFACE2,
             borderwidth=0,
-            steps=[dict(range=[0, median_revenue], color=LINE)],
-            threshold=dict(line=dict(color=INK2, width=2), thickness=0.9, value=median_revenue * 5),
+            steps=[dict(range=[0, med_u], color=LINE)],
+            threshold=dict(line=dict(color=INK2, width=2), thickness=0.9, value=med_u * 5),
         ),
     ))
     fig.add_annotation(text=f"업종 중앙값의 {ratio:.1f}배", x=0.08, y=0.95, showarrow=False,
                         xref="paper", yref="paper", xanchor="left", font=dict(color=MUT, size=11))
-    fig.add_annotation(text="⏷ 5배 경고선", x=min(median_revenue * 5 / axis_max, 0.97), y=0.08,
+    fig.add_annotation(text="⏷ 5배 경고선", x=min(med_u * 5 / axis_max, 0.97), y=0.08,
                         showarrow=False, xref="paper", yref="paper", font=dict(color=WARNING, size=10))
     layout = {**PLOTLY_LAYOUT, "margin": dict(t=24, b=24, l=16, r=16)}
     fig.update_layout(**layout, height=140)
