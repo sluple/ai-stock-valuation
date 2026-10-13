@@ -10,6 +10,7 @@ __pycache__/
 venv/
 
 output/
+demo/out/frames/
 
 .streamlit/*
 !.streamlit/config.toml
