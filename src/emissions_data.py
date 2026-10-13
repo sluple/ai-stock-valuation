@@ -15,8 +15,14 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-_EMISSIONS_CSV = os.path.join(_DATA_DIR, "emissions_raw.csv")
 _CORP_CODE_PATH = os.path.join(_DATA_DIR, "CORPCODE.xml")
+
+# 여러 연도의 ETRS 원본을 모두 모아 학습한다(특정 연도에 고정되지 않도록, 표본도 늘리도록).
+# 파일 추가 시 이 리스트에만 경로를 더하면 된다.
+EMISSIONS_CSV_FILES = [
+    os.path.join(_DATA_DIR, "emissions_raw_2024.csv"),
+    os.path.join(_DATA_DIR, "emissions_raw_2025.csv"),
+]
 
 # ETRS 법인명에 흔한 한글 음차 그룹명을 DART식 로마자 표기로 치환 (매칭률을 높이기 위함)
 _PHONETIC_MAP = {
@@ -44,14 +50,34 @@ def normalize_company_name(name: str) -> str:
     return cleaned.upper()
 
 
-def load_emissions_data() -> pd.DataFrame:
-    """ETRS 배출량 원본 CSV를 로드해 정리한다."""
-    df = pd.read_csv(_EMISSIONS_CSV, encoding="cp949")
-    df["배출량_tCO2eq"] = pd.to_numeric(df["온실가스배출량"].astype(str).str.replace(",", ""), errors="coerce")
-    df["에너지사용량_TJ"] = pd.to_numeric(df["에너지사용량"].astype(str).str.replace(",", ""), errors="coerce")
+def _find_col(df: pd.DataFrame, prefix: str) -> str:
+    """ETRS 파일은 연도마다 컬럼명에 단위가 붙거나 빠진다
+    (예: "온실가스배출량" -> "온실가스배출량(tCO2-eq)"). prefix로 시작하는 컬럼을 찾는다."""
+    for col in df.columns:
+        if col.startswith(prefix):
+            return col
+    raise KeyError(f"'{prefix}'로 시작하는 컬럼을 찾을 수 없습니다. 실제 컬럼: {list(df.columns)}")
+
+
+def _load_one_emissions_file(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path, encoding="cp949")
+    emission_col = _find_col(df, "온실가스배출량")
+    energy_col = _find_col(df, "에너지사용량")
+    df["배출량_tCO2eq"] = pd.to_numeric(df[emission_col].astype(str).str.replace(",", ""), errors="coerce")
+    df["에너지사용량_TJ"] = pd.to_numeric(df[energy_col].astype(str).str.replace(",", ""), errors="coerce")
     df = df.dropna(subset=["배출량_tCO2eq"])  # 배출량 비공개(*****) 기업 제외
     df["정규화명"] = df["업체명"].apply(normalize_company_name)
+    # 연도별로 "계획업종" 표기에 띄어쓰기가 있다 없다 하는 경우가 있어("기타식품제조업" vs
+    # "기타 식품 제조업"), 공백을 지워 정규화한다 — 안 그러면 같은 업종이 다른 업종으로 쪼개진다.
+    df["계획업종"] = df["계획업종"].str.replace(" ", "", regex=False)
     return df
+
+
+def load_emissions_data(paths: list[str] | None = None) -> pd.DataFrame:
+    """ETRS 배출량 원본 CSV(여러 연도)를 전부 로드해 하나로 합친다."""
+    paths = paths if paths is not None else EMISSIONS_CSV_FILES
+    frames = [_load_one_emissions_file(p) for p in paths]
+    return pd.concat(frames, ignore_index=True)
 
 
 def build_corp_name_index() -> dict[str, dict]:

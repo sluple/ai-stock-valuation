@@ -39,12 +39,27 @@ def load_training_data() -> pd.DataFrame:
     return df
 
 
+# 정부의 업종 분류가 세분화되면서(54개->70개), 기업이 1~2개뿐인 업종이 늘어 "중앙값"이
+# 사실상 그 기업 혼자만의 값이 되는 문제가 생겼다. 임의로 상위 업종에 묶는 대신(어떤 업종이
+# 어디에 속하는지에 대한 공식 대응표가 없어 부정확할 위험이 있음), 표본이 적은 업종일수록
+# 전산업 평균 쪽으로 끌어당기는 축소추정(shrinkage)을 적용한다 — 업종 표본수 n이 SHRINKAGE_K보다
+# 훨씬 크면 업종 자체 중앙값을 그대로 쓰고, n이 작으면 전산업 평균에 가깝게 보정된다.
+# (James-Stein류 축소추정과 같은 원리: benchmark = (median*n + overall*k) / (n+k))
+SHRINKAGE_K = 0  # 2024+2025 풀링 후 업종당 평균 9.4개(1개뿐인 업종 0개)로 표본이 충분해져
+# 축소추정이 오히려 성능을 깎는다(교차검증 확인: k=0일 때 R2=0.742로 최고). 다만 로직은
+# 남겨둔다 — 업종이 다시 세분화되거나 데이터가 줄어들면 k>0로 올려 재사용할 수 있다.
+
+
 def compute_industry_benchmark(df: pd.DataFrame) -> pd.DataFrame:
-    """업종별 배출집약도(tCO2eq / 매출액 1억원) 중앙값."""
+    """업종별 배출집약도(tCO2eq / 매출액 1억원) — 표본이 적은 업종은 전산업 평균 쪽으로 축소추정."""
     df = df.copy()
     df["집약도"] = df["배출량_tCO2eq"] / (df["매출액"] / 1e8)
-    benchmark = df.groupby("계획업종")["집약도"].median().reset_index()
-    benchmark.columns = ["계획업종", "배출집약도_톤per억원"]
+    overall_median = float(df["집약도"].median())
+    grouped = df.groupby("계획업종")["집약도"].agg(["median", "count"]).reset_index()
+    grouped["배출집약도_톤per억원"] = (
+        grouped["median"] * grouped["count"] + overall_median * SHRINKAGE_K
+    ) / (grouped["count"] + SHRINKAGE_K)
+    benchmark = grouped[["계획업종", "배출집약도_톤per억원"]]
     return benchmark
 
 

@@ -11,7 +11,13 @@ from emissions_data import load_emissions_data, normalize_company_name
 from fetch_dart import find_corp_code, get_financial_statements
 from normalize import build_financial_table
 
-TARGET_YEAR = 2024
+# 신규 기업(학습 데이터에 없는 기업)을 조회할 때 DART에서 가져올 재무제표 연도.
+# 학습 데이터는 emissions_data.EMISSIONS_CSV_FILES에 등록된 모든 연도(2024+2025)를
+# 풀링해서 쓰지만, "지금 이 기업은 어떤지" 새로 조회할 때는 그중 가장 최신 연도를
+# 쓴다. K-ETS 원자료에 새 연도가 추가되면, emissions_data.EMISSIONS_CSV_FILES에
+# 파일을 더하고 재학습(build_emissions_dataset.py -> train_model.py)한 뒤 이 값도
+# 같이 올려야 한다 — 자동으로 "올해"를 따라가지 않는다.
+TARGET_YEAR = 2025
 
 # 실제 공시값·회귀모델·업종평균 세 추정치가 서로 이 비율 이내로 근접하면
 # "업종 내 전형적인 배출 패턴"으로 판정한다. (max-min)/min 기준.
@@ -46,15 +52,21 @@ def list_known_industries() -> list[str]:
 
 
 def _find_actual_disclosure(corp_code: str) -> tuple[float | None, str | None]:
-    """이 기업이 K-ETS 배출권거래제 대상이라 실제 배출량이 이미 공시돼 있는지 확인한다."""
+    """이 기업이 K-ETS 배출권거래제 대상이라 실제 배출량이 이미 공시돼 있는지 확인한다.
+
+    학습 데이터에 같은 기업의 여러 연도가 있을 수 있어(2024·2025 등 pooled), 그중
+    가장 최근 연도(대상년도)의 실측값을 우선으로 쓴다 — "현재" 기준 비교가 되도록."""
     try:
         df = emissions_model.load_training_data()
     except FileNotFoundError:
         return None, None
-    row = df[df["corp_code"] == corp_code]
-    if row.empty:
+    rows = df[df["corp_code"] == corp_code]
+    if rows.empty:
         return None, None
-    return float(row.iloc[0]["배출량_tCO2eq"]), row.iloc[0]["계획업종"]
+    if "대상년도" in rows.columns:
+        rows = rows.sort_values("대상년도", ascending=False)
+    row = rows.iloc[0]
+    return float(row["배출량_tCO2eq"]), row["계획업종"]
 
 
 def run_analysis(stock_code: str, industry_override: str | None = None) -> EmissionsResult:

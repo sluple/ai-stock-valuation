@@ -19,35 +19,39 @@ OUTPUT_PATH = "../data/emissions_training_data.csv"
 
 def main() -> None:
     print("배출량 데이터 로드 중...")
-    emissions = load_emissions_data()
+    emissions = load_emissions_data()  # 여러 연도 파일을 전부 합쳐서 로드
     corp_index = build_corp_name_index()
     matched = match_emissions_to_dart(emissions, corp_index)
 
-    # 사업장/업체 이중 신고 등으로 같은 회사가 여러 행일 수 있으므로 합산
+    # 사업장/업체 이중 신고 등으로 같은 "연도 내" 중복 행이 있을 수 있어 합산한다.
+    # 단, 연도(대상년도)는 그룹 키에 반드시 포함해야 한다 — 안 그러면 2024년 배출량과
+    # 2025년 배출량이 같은 회사라는 이유로 합쳐져 버린다. 같은 회사의 다른 연도는
+    # 서로 다른 학습 샘플(그 해의 매출-배출량 쌍)로 남겨야 한다.
     grouped = (
-        matched.groupby(["corp_code", "corp_name", "stock_code", "계획업종"], as_index=False)
+        matched.groupby(["corp_code", "corp_name", "stock_code", "계획업종", "대상년도"], as_index=False)
         .agg({"배출량_tCO2eq": "sum", "에너지사용량_TJ": "sum"})
     )
-    print(f"매칭된 고유 기업 수: {len(grouped)}")
+    print(f"매칭된 (기업, 연도) 조합 수: {len(grouped)}")
 
     rows = []
     failed = []
     for i, row in grouped.iterrows():
         corp_code = row["corp_code"]
+        year = int(row["대상년도"])  # 그 행의 배출량이 실제로 보고된 연도의 재무데이터를 가져온다
         try:
             # 별도(OFS)재무제표를 우선 사용한다: 배출권거래제 배출량은 특정 법인(사업장) 단위인데,
             # 연결(CFS) 매출액을 쓰면 지주회사·복합기업의 경우 무관한 계열사 매출까지 섞여
             # 매출 대비 배출집약도가 크게 왜곡된다 (세아베스틸지주는 연결매출이 별도매출의 22배,
             # 동국홀딩스는 50배 — 실제로 확인된 값). 별도재무제표가 없는 경우에만 연결로 대체한다.
-            data = get_financial_statements(corp_code, 2024, fs_div="OFS")
+            data = get_financial_statements(corp_code, year, fs_div="OFS")
             if data.get("status") != "000":
-                data = get_financial_statements(corp_code, 2024, fs_div="CFS")
+                data = get_financial_statements(corp_code, year, fs_div="CFS")
             if data.get("status") != "000":
-                failed.append((row["corp_name"], data.get("status"), data.get("message")))
+                failed.append((row["corp_name"], year, data.get("status"), data.get("message")))
                 continue
             fin = build_financial_table(data.get("list", []))
             if "매출액" not in fin or fin.get("매출액", 0) <= 0:
-                failed.append((row["corp_name"], "no_revenue", ""))
+                failed.append((row["corp_name"], year, "no_revenue", ""))
                 continue
             rows.append(
                 {
@@ -55,6 +59,7 @@ def main() -> None:
                     "corp_name": row["corp_name"],
                     "stock_code": row["stock_code"],
                     "계획업종": row["계획업종"],
+                    "대상년도": year,
                     "배출량_tCO2eq": row["배출량_tCO2eq"],
                     "에너지사용량_TJ": row["에너지사용량_TJ"],
                     "매출액": fin.get("매출액"),
@@ -64,7 +69,7 @@ def main() -> None:
                 }
             )
         except Exception as e:  # noqa: BLE001
-            failed.append((row["corp_name"], "exception", str(e)))
+            failed.append((row["corp_name"], year, "exception", str(e)))
 
         if (i + 1) % 50 == 0:
             print(f"  진행: {i + 1}/{len(grouped)} (성공 {len(rows)}, 실패 {len(failed)})")
