@@ -15,7 +15,7 @@ import db
 import emissions_model
 import fetch_dart
 import industry_suggest
-from llm_report import generate_report
+from llm_report import stream_report
 
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="🌍", layout="wide")
 
@@ -322,7 +322,7 @@ st.markdown(
         h1, h2, h3, h4, h5 {{ font-weight: 800 !important; letter-spacing: -0.01em; color: {INK} !important; }}
 
         div[data-testid="stExpander"] {{ border: 1px solid {LINE}; border-radius: 10px; background: {SURFACE}; }}
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
+        div[data-testid="stLayoutWrapper"] {{
             border-radius: 12px !important; border-color: {LINE} !important; background: {SURFACE};
         }}
 
@@ -438,6 +438,24 @@ st.markdown(
             text-align: center; font-size: 0.68rem; color: {MUT}; margin: 6px 0 2px 0; line-height: 1.4;
         }}
         @media (max-width: 700px) {{ .pipe-row {{ flex-direction: column; align-items: center; }} .pipe-arrow {{ transform: rotate(90deg); }} }}
+
+        @keyframes cardIn {{
+            from {{ opacity: 0; transform: translateY(14px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        div[data-testid="stLayoutWrapper"] {{ animation: cardIn 0.5s ease-out both; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card1) {{ animation-delay: 0.02s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card2) {{ animation-delay: 0.08s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card3) {{ animation-delay: 0.14s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card4) {{ animation-delay: 0.20s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card5) {{ animation-delay: 0.26s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card6) {{ animation-delay: 0.32s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card7) {{ animation-delay: 0.38s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-card8) {{ animation-delay: 0.44s; }}
+        div[data-testid="stLayoutWrapper"]:has(.st-key-reportcard) {{ animation-delay: 0.05s; }}
+        @media (prefers-reduced-motion: reduce) {{
+            div[data-testid="stLayoutWrapper"] {{ animation: none; }}
+        }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -641,7 +659,7 @@ for w in result.warnings:
     st.warning(w)
 
 # ── 1) 실측값·회귀모델·업종평균 세 수치 비교 ──────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card1"):
     st.markdown(
         '<div class="card-head"><div class="num">1</div><h5>세 가지 방법으로 Scope 1+2를 각각 추정해 비교합니다</h5></div>',
         unsafe_allow_html=True,
@@ -668,7 +686,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 2) 회귀모델 내부 계산 파이프라인 ──────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card2"):
     st.markdown(
         '<div class="card-head"><div class="num">2</div><h5>회귀모델은 내부적으로 이렇게 계산합니다</h5></div>',
         unsafe_allow_html=True,
@@ -689,7 +707,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 3) 편차율 게이지 ───────────────────────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card3"):
     st.markdown(
         '<div class="card-head"><div class="num">3</div><h5>편차율이 30% 기준선 안에 들어오는지 측정합니다</h5></div>',
         unsafe_allow_html=True,
@@ -706,7 +724,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 3) Scope 3 = Scope1+2 × 3 (도넛) ──────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card4"):
     st.markdown(
         '<div class="card-head"><div class="num">4</div><h5>Scope 3는 CDP 배율(×3)을 곱해 확장 산출합니다</h5></div>',
         unsafe_allow_html=True,
@@ -723,7 +741,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 4) 규모 이상치 경고 (불릿 차트) ────────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card5"):
     st.markdown(
         '<div class="card-head"><div class="num">5</div><h5>매출 규모가 업종 중앙값의 5배를 넘는지 확인합니다</h5></div>',
         unsafe_allow_html=True,
@@ -742,7 +760,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 6) 피처 중요도 ─────────────────────────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card6"):
     st.markdown(
         '<div class="card-head"><div class="num">6</div><h5>회귀모델은 세 입력 중 무엇을 가장 많이 참고했을까요</h5></div>',
         unsafe_allow_html=True,
@@ -759,7 +777,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 7) 업종 내 위치 비교 (벤치마킹) ───────────────────────────────────────────
-with st.container(border=True):
+with st.container(border=True, key="card7"):
     st.markdown(
         '<div class="card-head"><div class="num">7</div><h5>같은 업종 다른 기업들과 비교하면 어디쯤일까요</h5></div>',
         unsafe_allow_html=True,
@@ -783,7 +801,7 @@ with st.container(border=True):
 st.write("")
 
 # ── 8) 연도별 추이 (지연 로딩 — DART 호출이 추가로 필요해 버튼을 눌러야 조회) ──
-with st.container(border=True):
+with st.container(border=True, key="card8"):
     st.markdown(
         '<div class="card-head"><div class="num">8</div><h5>연도별로는 어떻게 바뀌어 왔을까요</h5></div>',
         unsafe_allow_html=True,
@@ -844,10 +862,15 @@ st.write("")
 # ── AI 리포트 ────────────────────────────────────────────────────────────────
 st.markdown('<div class="sec-label"><i></i>Claude API 리포트</div>', unsafe_allow_html=True)
 if st.session_state.get("report_key") != corp["corp_code"]:
-    with st.spinner("AI가 리포트를 쓰는 중이에요..."):
+    with st.container(border=True, key="reportcard"):
+        st.markdown(
+            '<div class="report-head"><div class="dot"></div><span>CLAUDE-GENERATED REPORT</span></div>',
+            unsafe_allow_html=True,
+        )
         try:
             context = analysis.build_llm_context(result)
-            st.session_state.report_text = generate_report(context)
+            # 다 받은 뒤 한 번에 뿌리지 않고, 생성되는 대로 바로 화면에 흘려보낸다 (타이핑 효과).
+            st.session_state.report_text = st.write_stream(stream_report(context))
             st.session_state.report_key = corp["corp_code"]
             try:
                 db.update_report(sb, st.session_state.get("record_id"), st.session_state.report_text)
@@ -856,8 +879,8 @@ if st.session_state.get("report_key") != corp["corp_code"]:
         except Exception as e:  # noqa: BLE001
             st.session_state.report_text = None
             st.error(f"리포트 생성에 실패했어요: {e}")
-if st.session_state.get("report_text"):
-    with st.container(border=True):
+elif st.session_state.get("report_text"):
+    with st.container(border=True, key="reportcard"):
         st.markdown(
             '<div class="report-head"><div class="dot"></div><span>CLAUDE-GENERATED REPORT</span></div>',
             unsafe_allow_html=True,

@@ -64,3 +64,23 @@ def generate_report(context: dict) -> str:
     )
 
     return "".join(block.text for block in response.content if block.type == "text")
+
+
+def stream_report(context: dict):
+    """generate_report와 같은 요청을 스트리밍으로 보내, 생성되는 대로 텍스트 조각을 yield한다.
+    (Streamlit의 st.write_stream()에 그대로 넘기면 실시간 타이핑 효과로 표시된다.)
+    """
+    client = _get_client()
+    user_content = (
+        "다음은 자동으로 계산된 기업 탄소배출량 분석 데이터입니다. 이 데이터를 바탕으로 리포트를 작성하세요.\n\n"
+        + json.dumps(context, ensure_ascii=False, indent=2)
+    )
+
+    with client.messages.stream(
+        model="claude-opus-5",
+        max_tokens=2048,
+        system=SYSTEM_PROMPT,
+        output_config={"effort": "medium"},
+        messages=[{"role": "user", "content": user_content}],
+    ) as stream:
+        yield from stream.text_stream
