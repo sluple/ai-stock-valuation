@@ -19,39 +19,22 @@ from llm_report import stream_report
 
 st.set_page_config(page_title="AI 탄소배출량 추정기", page_icon="🌍", layout="wide")
 
-# ── 테마 토글: dataviz 스킬 검증 팔레트의 라이트/다크 두 모드 값 ──────────────
-# (버튼 위젯은 팔레트가 정해진 "뒤"가 아니라 "앞"에 있어야, 클릭한 바로 이번 rerun에서
-#  같은 스크립트 아래쪽의 모든 색상·차트가 새 테마로 그려진다.)
-if "theme" not in st.session_state:
-    st.session_state.theme = "dark"
-
-with st.container(key="theme_toggle_wrap"):
-    _toggle_label = "☀️ 라이트 모드" if st.session_state.theme == "dark" else "🌙 다크 모드"
-    if st.button(_toggle_label, key="theme_toggle_btn"):
-        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-        st.rerun()  # 버튼 라벨도 바로 다음 상태로 다시 그리도록 즉시 재실행
-
-_DARK = dict(
-    PAGE="#0d0d0d", SURFACE="#1a1a19", SURFACE2="#202220", INK="#f0efec", INK2="#c3c2b7",
-    MUT="#898781", LINE="#2c2c2a", BASELINE="#383835",
-    BLUE="#3987e5", ORANGE="#d95926",
-    GOOD="#0ca30c", WARNING="#fab219", SERIOUS="#ec835a",
-    GOOD_TINT="rgba(12,163,12,0.16)", WARNING_TINT="rgba(250,178,25,0.16)",
-)
-_LIGHT = dict(
-    PAGE="#f9f9f7", SURFACE="#fcfcfb", SURFACE2="#f2f1ee", INK="#0b0b0b", INK2="#52514e",
-    MUT="#898781", LINE="#e1e0d9", BASELINE="#c3c2b7",
-    BLUE="#2a78d6", ORANGE="#eb6834",
-    GOOD="#0ca30c", WARNING="#fab219", SERIOUS="#ec835a",
-    GOOD_TINT="rgba(12,163,12,0.16)", WARNING_TINT="rgba(250,178,25,0.16)",
-)
-_pal = _LIGHT if st.session_state.theme == "light" else _DARK
-PAGE, SURFACE, SURFACE2 = _pal["PAGE"], _pal["SURFACE"], _pal["SURFACE2"]
-INK, INK2, MUT = _pal["INK"], _pal["INK2"], _pal["MUT"]
-LINE, BASELINE = _pal["LINE"], _pal["BASELINE"]
-BLUE, ORANGE = _pal["BLUE"], _pal["ORANGE"]      # 카테고리컬 slot 1·2 — 회귀모델/업종평균
-GOOD, WARNING, SERIOUS = _pal["GOOD"], _pal["WARNING"], _pal["SERIOUS"]
-GOOD_TINT, WARNING_TINT = _pal["GOOD_TINT"], _pal["WARNING_TINT"]
+# ── 팔레트: dataviz 스킬 검증 팔레트의 다크모드 값 ────────────────────────────
+PAGE = "#0d0d0d"
+SURFACE = "#1a1a19"
+SURFACE2 = "#202220"
+INK = "#f0efec"
+INK2 = "#c3c2b7"
+MUT = "#898781"
+LINE = "#2c2c2a"
+BASELINE = "#383835"
+BLUE = "#3987e5"      # 카테고리컬 slot 1(다크) — 회귀모델
+ORANGE = "#d95926"    # 카테고리컬 slot 2(다크) — 업종평균
+GOOD = "#0ca30c"
+WARNING = "#fab219"
+SERIOUS = "#ec835a"
+GOOD_TINT = "rgba(12,163,12,0.16)"
+WARNING_TINT = "rgba(250,178,25,0.16)"
 
 SYSTEM_COMPONENTS = [
     ("STREAMLIT", "웹 대시보드", "Plotly 차트 + 회사명 검색·결과 화면 단일 페이지"),
@@ -323,7 +306,7 @@ st.markdown(
     <style>
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
-        header[data-testid="stHeader"] {{ background: transparent; height: 0; overflow: hidden; pointer-events: none; }}
+        header[data-testid="stHeader"] {{ background: transparent; height: 0; overflow: hidden; }}
         [data-testid="stToolbar"] {{ visibility: hidden; display: none; }}
         [data-testid="stSidebarCollapsedControl"] {{ display: none; }}
         [data-testid="stStatusWidget"] {{ display: none !important; }}
@@ -343,7 +326,6 @@ st.markdown(
             border-radius: 12px !important; border-color: {LINE} !important; background: {SURFACE};
         }}
 
-        div[data-testid="stAlert"] {{ background: {SURFACE2} !important; }}
         div[data-testid="stAlert"] * {{ color: {INK} !important; }}
         .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
         .stMarkdown strong, .stMarkdown em {{ color: {INK2} !important; }}
@@ -354,10 +336,6 @@ st.markdown(
         }}
         .stButton > button[kind="primary"]:hover {{ background: #5a9fec !important; }}
         .stButton > button[kind="primary"]:disabled {{ background: {LINE} !important; color: {MUT} !important; }}
-        .stButton > button[kind="secondary"] {{
-            background: {SURFACE2} !important; color: {INK} !important; border-color: {LINE} !important;
-        }}
-        .stButton > button[kind="secondary"]:hover {{ border-color: {BLUE} !important; color: {BLUE} !important; }}
 
         div[data-testid="stTextInput"] input {{
             border-radius: 8px !important; border-color: {LINE} !important; background: {SURFACE2} !important;
@@ -366,20 +344,6 @@ st.markdown(
         div[data-testid="stTextInput"] input:focus {{
             border-color: {BLUE} !important; box-shadow: 0 0 0 3px rgba(57,135,229,0.2) !important;
         }}
-
-        /* Streamlit 기본 테마가 .streamlit/config.toml에 다크로 고정돼 있어, selectbox 등
-           React Aria 네이티브 컴포넌트는 우리 CSS 변수가 아니라 그 설정을 그대로 따른다.
-           라이트 모드에서도 올바르게 보이도록 직접 덮어쓴다 (닫힌 상태 + 열린 팝오버 둘 다). */
-        div[data-testid="stSelectbox"] div[role="group"] {{
-            background: {SURFACE2} !important; border-color: {LINE} !important;
-        }}
-        div[data-testid="stSelectbox"] input[role="combobox"] {{
-            color: {INK} !important; background: transparent !important;
-        }}
-        div[data-testid="stSelectbox"] svg {{ color: {MUT} !important; fill: {MUT} !important; }}
-        [role="listbox"] {{ background: {SURFACE2} !important; border-color: {LINE} !important; }}
-        [role="option"] {{ background: {SURFACE2} !important; color: {INK} !important; }}
-        [role="option"]:hover, [role="option"][aria-selected="true"] {{ background: {LINE} !important; }}
 
         .top-header {{
             display: flex; align-items: center; gap: 12px; padding: 0.1rem 0 1.1rem 0;
@@ -437,7 +401,7 @@ st.markdown(
             display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.76rem;
             padding: 0.3rem 0.75rem; border-radius: 6px; font-family: "JetBrains Mono", monospace;
         }}
-        .badge-good {{ background: {GOOD_TINT}; color: {GOOD}; }}
+        .badge-good {{ background: {GOOD_TINT}; color: #5fd65f; }}
         .badge-warn {{ background: {WARNING_TINT}; color: {WARNING}; }}
 
         .report-head {{ display: flex; align-items: center; gap: 8px; margin-bottom: 0.7rem; }}
@@ -492,21 +456,6 @@ st.markdown(
         @media (prefers-reduced-motion: reduce) {{
             div[data-testid="stLayoutWrapper"] {{ animation: none; }}
         }}
-
-        /* 라이트/다크 테마 토글 버튼 — 카드 스타일(배경·테두리·페이드인) 상속을 끄고
-           화면 우상단에 작은 알약 버튼으로 고정한다. */
-        div[data-testid="stLayoutWrapper"]:has(.st-key-theme_toggle_wrap) {{
-            position: fixed; top: 14px; right: 20px; z-index: 9999;
-            background: transparent !important; border: none !important; animation: none !important;
-            width: auto !important;
-        }}
-        .st-key-theme_toggle_wrap button {{
-            border-radius: 999px !important; border: 1px solid {LINE} !important;
-            background: {SURFACE2} !important; color: {INK2} !important;
-            font-size: 0.78rem !important; padding: 0.35rem 0.9rem !important;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.15) !important;
-        }}
-        .st-key-theme_toggle_wrap button:hover {{ border-color: {BLUE} !important; color: {INK} !important; }}
     </style>
     """,
     unsafe_allow_html=True,
